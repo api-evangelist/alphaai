@@ -1,0 +1,100 @@
+name: AlphaAI
+description: >-
+  A REST API and agent-native platform for relevance-scored, ticker-linked financial news, built for trading bots, agent
+  backends, and dashboards. Articles are enriched at ingest with relevance scores, categories, and per-ticker sentiment,
+  plus structured SEC Form 4 insider data.
+url: https://alphaai.apievangelist.com/apis.yml
+created: '2026-07-05'
+modified: '2026-07-05'
+specificationVersion: '0.21'
+tags:
+  - Financial News
+  - Stock Market
+  - SEC Filings
+  - Insider Trading
+  - Fintech
+  - Market Data
+  - Sentiment
+  - AI Agents
+  - MCP
+  - LLM
+  - Trading
+apis:
+  - name: AlphaAI REST API
+    description: >-
+      REST API for relevance-scored, ticker-linked financial news with nine stable endpoints covering news feeds,
+      trending, insider (SEC Form 4) data, symbols, and sentiment/insider rollups. API key bearer token auth.
+    humanURL: https://alphai.io/developers
+    baseURL: https://api.alphai.io
+    tags:
+      - Financial News
+      - Stock Market
+      - SEC Filings
+      - Insider Trading
+      - Fintech
+      - Market Data
+      - Sentiment
+      - AI Agents
+      - MCP
+      - LLM
+      - Trading
+    properties:
+      - type: OpenAPI
+        url: https://api.alphai.io/api/schema/
+      - type: Documentation
+        url: https://alphai.io/developers
+      - type: Documentation
+        url: https://api.alphai.io/api/schema/swagger-ui/
+  - name: AlphaAI MCP Server
+    description: >-
+      Hosted MCP server exposing 11 tools for news search, ticker news, trending, actionable-now, insider news, pair
+      analysis, article retrieval, tickers, and alert management. OAuth 2.1 with RFC 7591 dynamic client registration
+      over Streamable HTTP.
+    humanURL: https://alphai.io/mcp
+    baseURL: https://mcp.alphai.io/mcp
+    tags:
+      - Financial News
+      - Stock Market
+      - SEC Filings
+      - Insider Trading
+      - Fintech
+      - Market Data
+      - Sentiment
+      - AI Agents
+      - MCP
+      - LLM
+      - Trading
+    properties:
+      - type: MCP
+        url: https://mcp.alphai.io/mcp
+      - type: Documentation
+        url: https://alphai.io/mcp
+  - name: AlphaAI Claude Code Skills
+    description: >-
+      Open-source pack of Claude Code agent skills wrapping the MCP tools into ready-made workflows: one-ticker brief,
+      market pulse, insider-activity scan, two-ticker read-across, and alert management.
+    humanURL: https://github.com/makeev/alphai-claude-skills
+    baseURL: https://github.com/makeev/alphai-claude-skills
+    tags:
+      - Financial News
+      - Stock Market
+      - SEC Filings
+      - Insider Trading
+      - Fintech
+      - Market Data
+      - Sentiment
+      - AI Agents
+      - MCP
+      - LLM
+      - Trading
+    properties:
+      - type: AgentSkills
+        url: https://github.com/makeev/alphai-claude-skills
+maintainers:
+  - FN: Mikhail Makeev
+    url: https://alphai.io/contact
+generated:
+  by: apis.io/add
+  model: claude-opus-4-8
+  confidence: 95
+  at: '2026-07-05T05:51:57.603Z'
