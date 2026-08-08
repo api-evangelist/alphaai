@@ -77,7 +77,7 @@ apis:
       - LLM
       - Trading
     properties:
-      - type: MCP
+      - type: MCPServer
         url: https://mcp.alphai.io/mcp
       - type: Documentation
         url: https://alphai.io/mcp
