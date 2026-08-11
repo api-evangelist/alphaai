@@ -1,0 +1,120 @@
+generated: '2026-08-11'
+method: searched
+source: https://alphai.io/changelog
+description: >-
+  A dated, user-visible changelog covering both REST and MCP changes, newest
+  first. Entries are dated rather than version-numbered; the only semantic
+  version in play is info.version on the OpenAPI document (1.24.0 at capture).
+  Cadence over the captured window is roughly every other day.
+
+scheme: dated entries (YYYY-MM-DD); semantic version on the OpenAPI document only
+current_version: '1.24.0'
+url: https://alphai.io/changelog
+feed: null
+window_captured: '2026-07-15 to 2026-08-11'
+
+entries:
+  - date: '2026-08-11'
+    kind: addition
+    breaking: false
+    highlights:
+      - Per-ticker insider-trades endpoint GET /api/symbols/{ticker}/insider-trades/
+      - 3-month and 12-month rollups plus a chart_events array
+      - New transaction fields stake_change_pct and security_title
+  - date: '2026-08-06'
+    kind: fix
+    breaking: false
+    highlights:
+      - Form 4 coverage gap closed; 1,489 filings backfilled from SEC indexes
+      - Original publish timestamps restored on the backfilled rows
+  - date: '2026-08-05'
+    kind: improvement
+    breaking: false
+    highlights:
+      - Company-name resolution improved; the query parameter now matches brand names (spacex -> SPCX)
+  - date: '2026-07-31'
+    kind: addition
+    breaking: false
+    highlights:
+      - Economic calendar endpoint GET /api/calendar/ with stable UIDs and phase tracking
+  - date: '2026-07-30'
+    kind: addition
+    breaking: false
+    highlights:
+      - Macro categories added (macro_economy, commodities, geopolitics)
+      - Dedicated GET /api/news/macro/ endpoint
+  - date: '2026-07-30'
+    kind: improvement
+    breaking: false
+    highlights:
+      - Event-level story clustering by meaning rather than headline overlap
+      - sources_count field added
+  - date: '2026-07-29'
+    kind: fix
+    breaking: false
+    highlights:
+      - Insider transaction values validated against SEC filings
+      - avg_price_usd and total_value_usd corrected, or omitted when unverifiable
+  - date: '2026-07-28'
+    kind: change
+    breaking: true
+    highlights:
+      - Pro archive depth capped at 180 days (previously unlimited)
+      - Free stays 30 days, Basic stays 90 days
+    note: >-
+      The one entitlement reduction in the captured window. Announced in the
+      changelog only — no deprecation window, no Sunset header.
+  - date: '2026-07-27'
+    kind: change
+    breaking: false
+    highlights:
+      - Alert deduplication — one story delivers once per ticker per 24h across email, Telegram and webhooks
+  - date: '2026-07-26'
+    kind: addition
+    breaking: false
+    highlights:
+      - Public status page launched at status.alphai.io with uptime and latency tracking
+  - date: '2026-07-26'
+    kind: addition
+    breaking: false
+    highlights:
+      - Delta polling on the insider feed via sort=ingested
+      - Trending items now carry story fields and symbol locale data
+  - date: '2026-07-25'
+    kind: addition
+    breaking: false
+    highlights:
+      - Feed polling mode — sort=ingested returns rows by ingest order with cursor resumption
+  - date: '2026-07-23'
+    kind: improvement
+    breaking: false
+    highlights:
+      - Share-class coverage expanded
+      - 8-K filings reclassified by primary item
+      - Trending ranks by a decay function, max 2 per ticker
+  - date: '2026-07-20'
+    kind: change
+    breaking: false
+    highlights:
+      - page_size now accepts 1-20 on all tiers (50 on Pro)
+  - date: '2026-07-15'
+    kind: improvement
+    breaking: false
+    highlights:
+      - Summary endpoints validate tickers
+      - Crypto names resolve to the -USD suffixed form
+
+summary:
+  entries_captured: 15
+  breaking_changes: 1
+  cadence: roughly every other day over the captured window
+  covers: [REST, MCP, data quality, entitlements]
+  note: >-
+    The changelog is notable for recording data-quality corrections (the Form 4
+    backfill, the insider-value validation), not just feature adds. That is a
+    materially different disclosure posture from a marketing release feed, and it
+    is the right one for a data product where a silently-wrong number is the real
+    failure mode.
+
+related:
+  lifecycle: lifecycle/alphaai-lifecycle.yml

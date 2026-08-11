@@ -1,0 +1,91 @@
+generated: '2026-08-11'
+method: searched
+source: >-
+  https://alphai.io/developers and https://alphai.io/llms-full.txt, corroborated
+  by the OpenAPI info.description and the RateLimited response component in
+  openapi/alphaai-rest-api-openapi.yml.
+description: >-
+  A two-layer quota model — a per-minute burst cap and a per-day volume cap —
+  where a request passes only if both are under budget. The published runtime
+  signal reports the DAY layer only; the minute layer is invisible until it
+  trips, which is the one thing an agent integrating this API has to know.
+
+limit_count: 6
+scope: per-account (all keys on an account share the budget)
+
+limits:
+  - tier: Free
+    scope: per-account
+    window: 1m
+    limit: 20
+  - tier: Free
+    scope: per-account
+    window: 1d
+    limit: 100
+    reset: 00:00 UTC
+  - tier: Basic
+    scope: per-account
+    window: 1m
+    limit: 60
+  - tier: Basic
+    scope: per-account
+    window: 1d
+    limit: 10000
+    reset: 00:00 UTC
+  - tier: Pro
+    scope: per-account
+    window: 1m
+    limit: 150
+  - tier: Pro
+    scope: per-account
+    window: 1d
+    limit: 100000
+    reset: 00:00 UTC
+
+headers:
+  - name: X-RateLimit-Limit
+    on: every keyed response
+    describes: the per-day volume cap for the caller's tier
+  - name: X-RateLimit-Remaining
+    on: every keyed response
+    describes: requests left in the current UTC day
+  - name: X-RateLimit-Reset
+    on: every keyed response
+    describes: epoch seconds of the next 00:00 UTC reset
+  - name: Retry-After
+    on: 429 only
+    describes: seconds to wait; short when the per-minute burst cap tripped
+style: X-RateLimit-* (legacy form, not the RFC 9331 RateLimit-* draft headers)
+
+exhaustion:
+  status: 429
+  body_fields:
+    - message
+    - extra.tier
+    - extra.limit_per_minute
+    - extra.limit_per_day
+    - extra.retry_after_seconds
+    - extra.upgrade
+  upgrade_block: >-
+    Callers below Pro receive an extra.upgrade object carrying the higher tiers'
+    caps and a pricing_url — the 429 is a self-describing upsell, which is a
+    genuinely agent-friendly touch.
+
+caveats:
+  - >-
+    The published headers describe ONLY the per-day layer. The per-minute burst
+    cap has no header at all and surfaces solely as a 429 with a short
+    Retry-After, so an agent watching X-RateLimit-Remaining can still be
+    throttled without warning. This is documented by the provider, not inferred.
+  - >-
+    The docs note the headers reflect origin processing, so a response served
+    from a shared cache may omit them entirely.
+  - >-
+    A separate 403 (not 429) enforces the archive horizon: paging past the
+    tier's window returns extra.reason = archive_horizon. It is a quota, but it
+    is signalled on a different status code.
+
+related:
+  plans: plans/alphaai-plans-pricing.yml
+  conventions: conventions/alphaai-conventions.yml
+  errors: errors/alphaai-problem-types.yml

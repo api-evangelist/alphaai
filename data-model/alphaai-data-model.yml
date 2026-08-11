@@ -1,0 +1,236 @@
+generated: '2026-08-11'
+method: derived
+source: >-
+  openapi/alphaai-rest-api-openapi.yml — 39 component schemas and their $ref
+  graph, plus the ticker/uid reference fields; enriched from the data-semantics
+  section of https://alphai.io/llms-full.txt.
+description: >-
+  The entity graph is shallow and article-centric. There are exactly three root
+  entities — Article, Symbol and CalendarEvent — and one of them, Article, is a
+  deep composite: RichNewsArticle nests five levels of enrichment schemas
+  describing what the AI thinks about the story. Everything else is a rollup
+  keyed on a ticker.
+
+identifiers:
+  - entity: Article
+    field: uid
+    format: 16 hex characters
+    prefix: null
+    stable: true
+  - entity: Symbol
+    field: ticker
+    format: >-
+      Bare symbol for US equities/ETFs (AAPL); <SYM>-USD for crypto (BTC-USD);
+      Yahoo-style suffix for foreign listings (VOD.L, 7203.T, 0700.HK).
+    stable: true
+    note: >-
+      The ticker IS the key — there is no surrogate id. Dual-listed companies
+      resolve to the US ADR for news purposes.
+  - entity: Story
+    field: story_id
+    stable: true
+    note: >-
+      Appears only when collapse=story is requested. Groups syndicated reprints
+      of one event; sources_count is the corroboration signal.
+  - entity: CalendarEvent
+    field: uid
+    stable: true
+    note: Stable UIDs with phase tracking, added 2026-07-31.
+  - entity: WebhookEvent
+    field: id
+    prefix: 'evt_'
+    stable: true
+    source: asyncapi/alphaai-webhooks.yml
+
+entities:
+  - name: RichNewsArticle
+    root: true
+    description: The unit of the product. One row in every news feed.
+    composed_of: [OriginalArticle, EnrichedArticle, InsiderEvent]
+    fields: 6
+  - name: OriginalArticle
+    description: The source journalism — title, url, AI summary, publish time, source, source_domain.
+    fields: 15
+    note: Full article bodies are never exposed for copyright reasons; only the AI-generated summary is redistributable.
+  - name: EnrichedArticle
+    description: What AlphaAI adds at ingest — category, tickers, relevance score, and the AI analysis tree.
+    fields: 5
+  - name: AITradingInsights
+    description: The analysis tree — per-ticker impact, trading value, indirect effects, alternative perspectives.
+    fields: 4
+  - name: InsiderEvent
+    description: SEC Form 4 transaction detail carried inline on insider-category articles.
+    fields: 14
+  - name: Symbol
+    root: true
+    description: A tradeable instrument with sector, industry, exchange, country, currency.
+    fields: 14
+  - name: CalendarEvent
+    root: true
+    description: A scheduled US macro release (FOMC, CPI, jobs, GDP, PCE) with phase tracking.
+    fields: 15
+  - name: InsiderTradeEvent
+    description: One Form 4 event in the per-ticker history — the widest schema in the API at 22 fields.
+    fields: 22
+
+enumerations:
+  - name: NewsCategory
+    count: 14
+    values: [earnings, mergers_acquisitions, regulation, macro_economy, sector_analysis,
+             market_movers, technology, commodities, crypto, ipo, geopolitics, insider,
+             corporate_actions, other]
+  - name: Sentiment
+    values: [positive, neutral, negative]
+  - name: Confidence
+    values: [high, medium, low]
+  - name: Actionability
+    values: []
+    note: Enum values not enumerated here; the schema declares the type, the docs describe it as a gate on alphai_actionable_now.
+
+relationships:
+  - from: RichNewsArticle
+    to: OriginalArticle
+    kind: has_one
+    via: original
+  - from: RichNewsArticle
+    to: EnrichedArticle
+    kind: has_one
+    via: enrichment
+  - from: RichNewsArticle
+    to: InsiderEvent
+    kind: has_one
+    via: insider
+    optional: true
+    note: Present only on category=insider rows.
+  - from: EnrichedArticle
+    to: NewsCategory
+    kind: has_one
+    via: category
+  - from: EnrichedArticle
+    to: Symbol
+    kind: has_many
+    via: tickers
+    note: >-
+      Validated at enrichment time against the article text — enrichment.tickers
+      only ever contains symbols present in GET /api/symbols/. This is a real
+      referential-integrity guarantee, unusual for a news feed.
+  - from: EnrichedArticle
+    to: AITradingInsights
+    kind: has_one
+    via: ai_trading_insights
+  - from: EnrichedArticle
+    to: NewsContextEnhancement
+    kind: has_one
+    via: news_context_enhancement
+  - from: AITradingInsights
+    to: TickerAnalysis
+    kind: has_many
+    via: ticker_analysis
+  - from: AITradingInsights
+    to: NewsTradingValue
+    kind: has_one
+    via: news_trading_value
+  - from: AITradingInsights
+    to: IndirectMarketEffects
+    kind: has_one
+  - from: AITradingInsights
+    to: AlternativePerspectives
+    kind: has_one
+  - from: TickerAnalysis
+    to: ImpactAnalysis
+    kind: has_one
+    via: impact_analysis
+  - from: TickerAnalysis
+    to: Symbol
+    kind: belongs_to
+    via: ticker
+  - from: ImpactAnalysis
+    to: Sentiment
+    kind: has_one
+    via: sentiment
+  - from: ImpactAnalysis
+    to: Confidence
+    kind: has_one
+    via: confidence
+  - from: NewsContextEnhancement
+    to: KeyEntity
+    kind: has_many
+    via: key_entities
+  - from: NewsTradingValue
+    to: Actionability
+    kind: has_one
+  - from: RichNewsArticle
+    to: RichNewsArticle
+    kind: has_many
+    via: 'GET /api/news/{uid}/related/'
+    note: Up to 6 related articles — shared ticker first, then same-category backfill.
+  - from: Symbol
+    to: SymbolPeer
+    kind: has_many
+    via: 'GET /api/symbols/{ticker}/peers/'
+    note: Up to 10 same-industry tickers that carry recent news.
+  - from: Symbol
+    to: TickerSentimentSummary
+    kind: has_one
+    via: 'GET /api/symbols/{ticker}/sentiment-summary/'
+    note: 7-day rollup; insider template rows excluded (press coverage only).
+  - from: TickerSentimentSummary
+    to: DailySentimentBucket
+    kind: has_many
+  - from: Symbol
+    to: TickerInsiderSummary
+    kind: has_one
+    via: 'GET /api/symbols/{ticker}/insider-summary/'
+    note: 30-day Form 4 rollup with buy/sell counts, dollar volumes, 10b5-1 share.
+  - from: TickerInsiderSummary
+    to: TopInsider
+    kind: has_many
+  - from: Symbol
+    to: TickerInsiderTrades
+    kind: has_one
+    via: 'GET /api/symbols/{ticker}/insider-trades/'
+  - from: TickerInsiderTrades
+    to: InsiderTradeEvent
+    kind: has_many
+    via: chart_events
+  - from: TickerInsiderTrades
+    to: InsiderTradesWeekBucket
+    kind: has_many
+  - from: TickerInsiderTrades
+    to: InsiderTradesMonthBucket
+    kind: has_many
+  - from: TickerInsiderTrades
+    to: InsiderTradesSummary
+    kind: has_one
+  - from: DirectorySector
+    to: DirectorySymbol
+    kind: has_many
+  - from: SymbolDirectory
+    to: DirectorySector
+    kind: has_many
+  - from: CalendarEvent
+    to: NewsCategory
+    kind: has_one
+
+collections:
+  - schema: NewsPagination
+    wraps: RichNewsArticle
+    fields: [results, next_cursor]
+  - schema: CalendarEvents
+    wraps: CalendarEvent
+  - schema: SymbolPeers
+    wraps: SymbolPeer
+  - schema: SectorSymbols
+    wraps: DirectorySymbol
+
+summary:
+  schemas: 39
+  root_entities: 3
+  enumerations: 4
+  relationships: 30
+  max_nesting_depth: 5
+  note: >-
+    The depth is all on the enrichment side. RichNewsArticle -> EnrichedArticle
+    -> AITradingInsights -> TickerAnalysis -> ImpactAnalysis -> Sentiment is a
+    five-hop path, and that path is the actual product: the reference data
+    (Symbol, CalendarEvent) is flat by comparison.

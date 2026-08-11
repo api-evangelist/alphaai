@@ -1,0 +1,81 @@
+generated: '2026-08-11'
+method: searched
+source: >-
+  https://alphai.io/developers (SDK section) plus live registry metadata reads:
+  pypi.org/pypi/alphai-sdk/json, registry.npmjs.org/alphai-sdk,
+  crates.io/api/v1/crates/alphai-tui, and api.github.com for each repo.
+description: >-
+  Three first-party client libraries, all MIT-licensed and all published under
+  the same GitHub owner as the API (makeev). Versions and publish dates were read
+  from the registry metadata endpoints on 2026-08-11, not from prose.
+
+packages:
+  - language: python
+    registry: pypi
+    name: alphai-sdk
+    url: https://pypi.org/project/alphai-sdk/
+    source_code: https://github.com/makeev/alphai-sdk
+    install: pip install alphai-sdk
+    official: true
+    license: MIT
+    version: 0.4.2
+    published: '2026-08-04'
+    requires: '>=3.10'
+    releases: 7
+    note: >-
+      Typed sync + async client with cursor pagination and automatic retries on
+      429/5xx. Its PyPI project_urls point back at the OpenAPI
+      (api.alphai.io/api/schema/) and the changelog, so the package metadata is
+      itself a discovery surface.
+
+  - language: typescript
+    registry: npm
+    name: alphai-sdk
+    url: https://www.npmjs.com/package/alphai-sdk
+    source_code: https://github.com/makeev/alphai-ts-sdk
+    install: npm install alphai-sdk
+    official: true
+    license: MIT
+    version: 0.4.2
+    published: '2026-08-04'
+    releases: 8
+    runtimes: [node, browser, edge, deno, bun]
+    note: >-
+      Zero runtime dependencies. Version-locked with the Python SDK — both sat at
+      0.4.2 published within six minutes of each other on 2026-08-04, which is a
+      deliberate release train rather than two drifting libraries.
+
+  - language: rust
+    registry: crates.io
+    name: alphai-tui
+    url: https://crates.io/crates/alphai-tui
+    source_code: https://github.com/makeev/alphai-tui
+    install: cargo install alphai-tui
+    official: true
+    license: MIT
+    version: 0.13.0
+    published: '2026-08-11'
+    downloads: 155
+    note: >-
+      Terminal dashboard (Rust + ratatui), not a client library — its command
+      surface is catalogued in cli/alphaai-cli.yml. Most actively developed of
+      the three: released the same day this artifact was written, and the only
+      repo with meaningful stars (21).
+
+currency:
+  checked: '2026-08-11'
+  assessment: >-
+    No abandonment signal. Every package's latest release postdates the API
+    version it wraps (OpenAPI info.version 1.24.0), and the newest release is
+    same-day. The Python and TypeScript SDKs do not cut GitHub releases (tags
+    only), so the registry date is the authoritative currency signal for those two.
+
+registries_checked:
+  - {registry: pypi, result: hit}
+  - {registry: npm, result: hit}
+  - {registry: crates.io, result: hit}
+  - {registry: rubygems, result: none}
+  - {registry: packagist, result: none}
+  - {registry: nuget, result: none}
+  - {registry: maven-central, result: none}
+  - {registry: pkg.go.dev, result: none}

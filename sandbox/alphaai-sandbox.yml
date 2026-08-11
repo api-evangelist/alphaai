@@ -1,0 +1,84 @@
+generated: '2026-08-11'
+method: searched
+source: >-
+  https://alphai.io/developers ("Try the API right here" / Playground section)
+  and https://api.alphai.io/api/schema/swagger-ui/ (HTTP 200, verified 2026-08-11).
+description: >-
+  AlphaAI has a console but no sandbox. There is a keyless interactive playground
+  on the developer page and a served Swagger UI on the API host, both of which
+  hit production. There is NO test mode, no test key prefix, no separate test
+  host, and no fixture data — and for a read-only market-news API that is a
+  defensible design rather than a gap: there is nothing to mutate, so the only
+  thing a test environment would provide is fake news.
+
+console:
+  present: true
+  name: Playground
+  url: https://alphai.io/developers#playground
+  section_title: Try the API right here
+  auth_required: false
+  mechanism: >-
+    Requests are proxied through the website so an evaluator needs neither a
+    login nor an API key. Responses are live from the real production API.
+  presets:
+    - trending news
+    - latest news
+    - symbol-specific queries
+    - insider activity
+    - sentiment data
+  custom_requests: true
+  adjustable_parameters: [path, cursor, symbol, category, exclude_categories, min_relevance]
+  endpoints_covered:
+    - 'GET /api/news/trending/'
+    - 'GET /api/news/'
+    - 'GET /api/news/insider/'
+    - 'GET /api/symbols/'
+    - 'GET /api/symbols/{ticker}/insider-summary/'
+
+swagger_ui:
+  present: true
+  url: https://api.alphai.io/api/schema/swagger-ui/
+  http_status: 200
+  verified: '2026-08-11'
+  note: >-
+    Served from the API host alongside the raw spec at /api/schema/. Executing a
+    request from it requires a real ak_live_ key.
+
+test_mode:
+  present: false
+  key_prefixes:
+    live: ak_live_
+    test: null
+    note: >-
+      The ak_live_ prefix implies a test counterpart, but no ak_test_ form is
+      documented anywhere on the public surface.
+  test_host: null
+  test_data: null
+  test_clock: null
+  fixtures: null
+  triggers: null
+
+free_tier_as_evaluation:
+  substitute_for_sandbox: true
+  detail: >-
+    The provider's stated evaluation path is the Free tier, not a sandbox: 20
+    requests/minute and 100/day against production, no credit card, licensed for
+    personal non-commercial use. Combined with the keyless playground, an
+    integrator can evaluate the full response shape before signing up at all.
+  signup: https://alphai.io/account/api-keys
+
+webhook_testing:
+  test_fire: false
+  note: >-
+    No documented ping/test event for webhook endpoints. A Pro customer
+    registering an endpoint at /account/webhooks has no published way to trigger
+    a delivery on demand and must wait for a real match. See
+    asyncapi/alphaai-webhooks.yml.
+
+gaps:
+  - No ak_test_ key form, so there is no way to distinguish test traffic from production traffic on an account.
+  - No webhook test-fire, which is the one place a test affordance would genuinely help.
+
+related:
+  plans: plans/alphaai-plans-pricing.yml
+  authentication: authentication/alphaai-authentication.yml

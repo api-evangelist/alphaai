@@ -1,0 +1,161 @@
+generated: '2026-08-11'
+method: derived
+source: >-
+  Derived by aligning the published MCP tool list (mcp/alphaai-mcp.yml, sourced
+  from alphai.io/mcp + llms.txt + the provider's own Claude Code skills) with the
+  live REST OpenAPI 3.1.0 at openapi/alphaai-rest-api-openapi.yml (15 operations,
+  39 schemas). Confidence recorded per row.
+purpose: >-
+  Bind each agent-facing MCP tool to the REST operation that backs it, so a tool
+  inherits a real input contract from the spec instead of a guessed one, and so
+  the places where the two surfaces genuinely diverge are recorded rather than
+  silently dropped.
+
+surfaces:
+  rest_openapi: openapi/alphaai-rest-api-openapi.yml
+  rest_base: https://api.alphai.io
+  rest_gated: false        # spec is served anonymously at /api/schema/; calling it needs a key
+  graphql: null            # no GraphQL surface
+  mcp: https://mcp.alphai.io/mcp
+  mcp_gated: true          # tools/list returns 401; tool names from provider docs
+
+operation_id_note: >-
+  IMPORTANT: the AlphaAI OpenAPI declares NO operationId on any of its 15
+  operations. There is nothing to grep, so this crosswalk identifies REST
+  operations by "METHOD path" — which is verifiable against the spec — rather
+  than inventing ids. Adding operationIds is the single highest-value change the
+  provider could make to this spec; overlays/alphaai-rest-api-overlay.yaml
+  proposes a set as an API Evangelist enhancement layer, clearly marked as ours.
+
+crosswalk:
+  - tool: alphai_news_search
+    category: news
+    rest: ['GET /api/news/']
+    binding: rest
+    confidence: high
+    note: >-
+      The tool's structured filters map 1:1 onto the operation's query
+      parameters (symbol, category, min_relevance, page_size, cursor,
+      collapse=story). The free-text `query` mode has no documented REST
+      equivalent and is likely a server-side search layer.
+  - tool: alphai_ticker_news
+    category: news
+    rest: ['GET /api/news/']
+    binding: rest
+    confidence: high
+    note: The ticker-scoped projection of the feed — GET /api/news/?symbol=<ticker>.
+  - tool: alphai_trending
+    category: news
+    rest: ['GET /api/news/trending/']
+    binding: rest
+    confidence: high
+  - tool: alphai_macro
+    category: news
+    rest: ['GET /api/news/macro/']
+    binding: rest
+    confidence: high
+  - tool: alphai_calendar
+    category: calendar
+    rest: ['GET /api/calendar/']
+    binding: rest
+    confidence: high
+  - tool: alphai_insider_news
+    category: insider
+    rest: ['GET /api/news/insider/']
+    binding: rest
+    confidence: high
+  - tool: alphai_article
+    category: news
+    rest: ['GET /api/news/{uid}/']
+    binding: rest
+    confidence: high
+  - tool: alphai_tickers
+    category: symbols
+    rest: ['GET /api/symbols/']
+    binding: rest
+    confidence: high
+    note: >-
+      The tool takes a `q` search argument; the REST operation exposes only limit
+      and offset over the full ~10k symbol list. The search itself is server-side
+      in the MCP layer, so the tool is slightly richer than its backing operation.
+  - tool: alphai_actionable_now
+    category: news
+    rest: ['GET /api/news/']
+    binding: rest
+    confidence: medium
+    note: >-
+      No dedicated REST route. Documented as breaking news from the last few
+      hours gated on actionability — a server-side filter over the feed using the
+      enrichment's actionability_score, which is not a documented REST query
+      parameter. Composite, not a straight proxy.
+  - tool: alphai_pair_analysis
+    category: analysis
+    rest: ['GET /api/news/', 'GET /api/symbols/{ticker}/peers/']
+    binding: rest
+    confidence: medium
+    note: >-
+      Composite: two ticker-scoped feed reads plus the cross-read between them.
+      No single REST operation returns a pair analysis.
+  - tool: search
+    category: chatgpt-connector
+    rest: ['GET /api/news/']
+    binding: rest
+    confidence: medium
+    note: ChatGPT deep-research connector contract; a renamed projection of the feed query.
+  - tool: fetch
+    category: chatgpt-connector
+    rest: ['GET /api/news/{uid}/']
+    binding: rest
+    confidence: medium
+    note: ChatGPT deep-research connector contract; document retrieval by uid.
+
+mcp_only:
+  - tool: alphai_alerts_list
+    reason: >-
+      Alert subscriptions have no public REST surface. The published OpenAPI is
+      entirely read-only news/symbols data — there is no /api/alerts/ route.
+  - tool: alphai_alerts_subscribe
+    reason: >-
+      Same. This is also the only write path in the entire public product, and it
+      exists ONLY through MCP — an unusual shape worth noting: the agent surface
+      is strictly more capable than the REST API here, not less.
+  - tool: alphai_alerts_unsubscribe
+    reason: No REST equivalent; MCP-only account mutation.
+
+rest_only:
+  - capability: per-ticker analytics
+    operations:
+      - 'GET /api/symbols/{ticker}/sentiment-summary/'
+      - 'GET /api/symbols/{ticker}/insider-summary/'
+      - 'GET /api/symbols/{ticker}/insider-trades/'
+    note: >-
+      The richest analytical endpoints in the API — 7-day sentiment rollups,
+      30-day Form 4 rollups, and the full per-ticker Form 4 event history with
+      3m/12m/all-time aggregates and weekly/monthly dollar buckets — have NO MCP
+      tool. An agent on the MCP surface cannot reach them at all, and must fall
+      back to REST. This is the largest divergence between the two surfaces.
+  - capability: symbol reference + discovery
+    operations:
+      - 'GET /api/symbols/{ticker}/'
+      - 'GET /api/symbols/{ticker}/peers/'
+      - 'GET /api/symbols/directory/'
+      - 'GET /api/symbols/sectors/{slug}/'
+    note: >-
+      alphai_tickers covers list/search only. Symbol detail, peers, the
+      most-covered directory and the per-sector cards are REST-only.
+  - capability: article graph
+    operations: ['GET /api/news/{uid}/related/']
+    note: Up to 6 related articles per story; no MCP tool exposes the relation.
+
+coverage:
+  tools_named: 15
+  tools_bound_to_rest: 12
+  mcp_only: 3
+  rest_operations_total: 15
+  rest_operations_with_a_tool: 7
+  rest_only_operations: 8
+  assessment: >-
+    Neither surface is a superset. MCP is the only way to manage alerts; REST is
+    the only way to reach every per-ticker analytic and the whole symbol
+    reference surface. An agent that treats the MCP tool list as the product's
+    full capability set will miss just over half the REST operations.

@@ -1,0 +1,132 @@
+overlay: 1.0.0
+info:
+  title: API Evangelist enhancements for the AlphaAI REST API
+  version: 1.0.0
+extends: openapi/alphaai-rest-api-openapi.yml
+
+# generated: '2026-08-11'
+# method: generated
+# source: >-
+#   Authored by the API Evangelist enrichment pipeline against the provider's own
+#   OpenAPI 3.1.0 (harvested verbatim from https://api.alphai.io/api/schema/ and
+#   archived at openapi/_original/). The original document is never mutated.
+#
+# WHY THIS OVERLAY EXISTS
+# The AlphaAI spec is well above average — 64 inline examples, every operation
+# summarised and tagged, a shared Error schema, reusable 401/403/404/429 response
+# components — but it declares NO operationId on any of its 15 operations. That is
+# the single defect that most limits it: code generators fall back to synthesised
+# method names, an MCP tool cannot be bound to a stable operation identifier, and
+# the tool crosswalk in mcp/alphaai-tool-crosswalk.yml has to address operations
+# by "METHOD path" because there is nothing to grep.
+#
+# The operationIds below are OUR PROPOSAL, not the provider's. They are derived
+# mechanically from each operation's method, path and tag. They are marked with
+# x-apievangelist-proposed so no consumer mistakes them for a provider-published
+# identifier, and they are carried in an overlay precisely so the harvested spec
+# stays exactly as the provider serves it.
+
+actions:
+  - target: $.info
+    update:
+      x-apievangelist-enriched: '2026-08-11'
+      x-apievangelist-profile: https://apis.io/provider/alphaai
+      x-apievangelist-artifacts:
+        conventions: conventions/alphaai-conventions.yml
+        errors: errors/alphaai-problem-types.yml
+        rate_limits: rate-limits/alphaai-rate-limits.yml
+        authentication: authentication/alphaai-authentication.yml
+        data_model: data-model/alphaai-data-model.yml
+        webhooks: asyncapi/alphaai-webhooks.yml
+        mcp: mcp/alphaai-mcp.yml
+        crosswalk: mcp/alphaai-tool-crosswalk.yml
+      x-apievangelist-findings:
+        - No operationId on any operation (15/15). Proposed below.
+        - No 5xx response documented on any operation.
+        - Errors are not RFC 9457; the extra block carries the machine-readable context.
+        - No request-id / correlation header for debugging.
+
+  # --- Proposed operationIds -------------------------------------------------
+  - target: $.paths['/api/news/'].get
+    update:
+      operationId: listNews
+      x-apievangelist-proposed: [operationId]
+  - target: $.paths['/api/news/trending/'].get
+    update:
+      operationId: listTrendingNews
+      x-apievangelist-proposed: [operationId]
+  - target: $.paths['/api/news/insider/'].get
+    update:
+      operationId: listInsiderNews
+      x-apievangelist-proposed: [operationId]
+  - target: $.paths['/api/news/macro/'].get
+    update:
+      operationId: listMacroNews
+      x-apievangelist-proposed: [operationId]
+  - target: $.paths['/api/calendar/'].get
+    update:
+      operationId: listCalendarEvents
+      x-apievangelist-proposed: [operationId]
+  - target: $.paths['/api/news/{uid}/'].get
+    update:
+      operationId: getNewsArticle
+      x-apievangelist-proposed: [operationId]
+  - target: $.paths['/api/news/{uid}/related/'].get
+    update:
+      operationId: listRelatedArticles
+      x-apievangelist-proposed: [operationId]
+  - target: $.paths['/api/symbols/'].get
+    update:
+      operationId: listSymbols
+      x-apievangelist-proposed: [operationId]
+  - target: $.paths['/api/symbols/{ticker}/'].get
+    update:
+      operationId: getSymbol
+      x-apievangelist-proposed: [operationId]
+  - target: $.paths['/api/symbols/{ticker}/sentiment-summary/'].get
+    update:
+      operationId: getSymbolSentimentSummary
+      x-apievangelist-proposed: [operationId]
+  - target: $.paths['/api/symbols/{ticker}/insider-summary/'].get
+    update:
+      operationId: getSymbolInsiderSummary
+      x-apievangelist-proposed: [operationId]
+  - target: $.paths['/api/symbols/{ticker}/insider-trades/'].get
+    update:
+      operationId: getSymbolInsiderTrades
+      x-apievangelist-proposed: [operationId]
+  - target: $.paths['/api/symbols/{ticker}/peers/'].get
+    update:
+      operationId: listSymbolPeers
+      x-apievangelist-proposed: [operationId]
+  - target: $.paths['/api/symbols/directory/'].get
+    update:
+      operationId: getSymbolDirectory
+      x-apievangelist-proposed: [operationId]
+  - target: $.paths['/api/symbols/sectors/{slug}/'].get
+    update:
+      operationId: listSectorSymbols
+      x-apievangelist-proposed: [operationId]
+
+  # --- Cross-links from operations to the artifacts that explain them --------
+  - target: $.components.responses.RateLimited
+    update:
+      x-apievangelist-detail: rate-limits/alphaai-rate-limits.yml
+  - target: $.components.responses.ArchiveGated
+    update:
+      x-apievangelist-detail: plans/alphaai-plans-pricing.yml
+      x-apievangelist-note: >-
+        A quota signal delivered on 403 rather than 429. Discriminate on
+        extra.reason == "archive_horizon" so it is not handled as an auth failure.
+  - target: $.components.schemas.Error
+    update:
+      x-apievangelist-detail: errors/alphaai-problem-types.yml
+      x-apievangelist-note: >-
+        Three alternative message fields (message / detail / error) are in live
+        use across different conditions; a client must check all three.
+  - target: $.components.schemas.RichNewsArticle
+    update:
+      x-apievangelist-note: >-
+        Also the payload schema of the news.matched.v1 webhook
+        (asyncapi/alphaai-webhooks.yml) — data.article is documented as identical
+        to the body of GET /api/news/{uid}/.

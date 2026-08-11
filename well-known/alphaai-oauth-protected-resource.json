@@ -1,0 +1,1 @@
+{"resource":"https://mcp.alphai.io/mcp","authorization_servers":["https://mcp.alphai.io"],"scopes_supported":["tools.read","tools.bulk"],"bearer_methods_supported":["header"]}

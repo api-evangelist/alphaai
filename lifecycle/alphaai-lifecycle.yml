@@ -1,0 +1,86 @@
+generated: '2026-08-11'
+method: searched
+source: >-
+  https://alphai.io/changelog, https://status.alphai.io (HTTP 200 on
+  2026-08-11), https://alphai.io/llms-full.txt, and
+  openapi/alphaai-rest-api-openapi.yml.
+description: >-
+  AlphaAI ships fast and documents it — the changelog carries 15+ dated entries
+  in the three weeks before this capture — but it publishes no deprecation policy
+  and no SLA, and the wire protocol has no version selector at all.
+
+versioning:
+  scheme: unversioned URI path
+  current: '1.24.0'
+  current_source: openapi info.version
+  in_url: false
+  header: null
+  date_pinning: false
+  note: >-
+    The /api/ path carries no version segment and there is no version header or
+    date pin. info.version on the OpenAPI document moves semantically, but a
+    caller cannot select it — every request gets current behaviour. The changelog
+    is the only way to learn a shape changed.
+  docs: https://alphai.io/changelog
+
+deprecation:
+  policy_url: null
+  policy_published: false
+  sunset_header: false
+  deprecation_header: false
+  rfc8594: false
+  deprecated_operations: []
+  note: >-
+    No deprecation policy page, no notice window, and no RFC 8594 Sunset or
+    Deprecation header support is documented or observed. No operation in the
+    OpenAPI is marked deprecated. This matters more than usual here because the
+    changelog shows the provider DOES make restrictive changes to live behaviour:
+    on 2026-07-28 the Pro archive depth was capped at 180 days where it had
+    previously been unlimited — a breaking reduction in entitlement, announced in
+    the changelog only, with no deprecation window recorded.
+
+breaking_change_history:
+  - date: '2026-07-28'
+    change: Pro news-archive depth capped at 180 days (previously unlimited).
+    kind: entitlement reduction
+    notice: changelog entry only
+  - date: '2026-07-20'
+    change: page_size accepted range changed to 1-20 on all tiers (50 on Pro).
+    kind: parameter range change
+    notice: changelog entry only
+
+sla:
+  url: null
+  uptime_target: null
+  published: false
+  note: >-
+    No SLA or uptime commitment is published for any tier, including Pro.
+    Enterprise lists "security review" and invoicing but no stated availability
+    target.
+
+status_page:
+  url: https://status.alphai.io
+  http_status: 200
+  verified: '2026-08-11'
+  launched: '2026-07-26'
+  covers: uptime and latency
+  note: >-
+    Launched 2026-07-26 per the changelog — recent, and a genuine operational
+    signal for a provider this young.
+
+support:
+  email: support@alphai.io
+  contact: https://alphai.io/contact
+  security: well-known/alphaai-security.txt
+
+maturity:
+  stage: early access
+  evidence: >-
+    Both paid tiers (Basic, Pro) are labelled "Early access" on the pricing page.
+    The MCP registry entry is at version 0.1.0. The SDKs are at 0.4.2. The
+    provider is not claiming stability, which makes the absent deprecation policy
+    an understandable gap rather than a contradiction.
+
+related:
+  changelog: changelog/alphaai-changelog.yml
+  conventions: conventions/alphaai-conventions.yml

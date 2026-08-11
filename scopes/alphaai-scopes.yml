@@ -1,0 +1,72 @@
+generated: '2026-08-11'
+method: probed
+source: https://mcp.alphai.io/.well-known/oauth-authorization-server
+docs: https://alphai.io/mcp
+description: >-
+  AlphaAI's OAuth surface belongs to the MCP server, not the REST API. The REST
+  OpenAPI declares only a bearer API key and no oauth2 scheme, so the mechanical
+  derive pass (derive-oauth-scopes.py) correctly found nothing. The scopes below
+  were read from the live RFC 8414 authorization-server metadata and the RFC 9728
+  protected-resource metadata on the MCP host — both anonymous, both 200.
+
+applies_to: https://mcp.alphai.io/mcp
+not_applicable_to: >-
+  https://api.alphai.io — the REST API authenticates with a static
+  `ak_live_` bearer key and has no scope model at all.
+
+schemes:
+  - name: MCP OAuth 2.1
+    source: well-known/alphaai-oauth-authorization-server.json
+    issuer: https://mcp.alphai.io
+    flows:
+      - flow: authorizationCode
+        authorizationUrl: https://mcp.alphai.io/oauth/authorize
+        tokenUrl: https://mcp.alphai.io/oauth/token
+        pkce: S256
+        refresh: true
+    dynamic_client_registration:
+      supported: true
+      spec: RFC 7591
+      registration_endpoint: https://mcp.alphai.io/oauth/register
+      token_endpoint_auth_methods_supported: [none]
+      note: >-
+        Public clients with no pre-registration — the shape MCP clients need to
+        connect from a browser without the user ever creating an OAuth app.
+    revocation_endpoint: https://mcp.alphai.io/oauth/revoke
+    introspection_endpoint: https://mcp.alphai.io/oauth/introspect
+
+scopes:
+  - scope: tools.read
+    description: >-
+      Read access to the MCP tool surface. Advertised by both the authorization
+      server and the protected-resource metadata. The provider publishes no
+      per-scope reference page, so this description is inferred from the scope
+      name and the read-only character of every tool except the alerts pair.
+    flows: [authorizationCode]
+    sources: [well-known/alphaai-oauth-authorization-server.json, well-known/alphaai-oauth-protected-resource.json]
+  - scope: tools.bulk
+    description: >-
+      Advertised alongside tools.read on both metadata documents. Its exact
+      semantics are not documented anywhere on the provider's public surface —
+      the name suggests higher-volume or batched tool invocation, but that is not
+      asserted here. Determining it would require authenticated introspection.
+    flows: [authorizationCode]
+    sources: [well-known/alphaai-oauth-authorization-server.json, well-known/alphaai-oauth-protected-resource.json]
+
+scope_count: 2
+
+gaps:
+  - >-
+    No scopes reference page exists. The scopes are discoverable only by reading
+    the .well-known metadata directly, which means a human integrator following
+    the docs never learns they exist.
+  - >-
+    The alert-mutating tools (alphai_alerts_subscribe / _unsubscribe) are the
+    only writes in the product, but no write-shaped scope is advertised. Either
+    tools.read covers them — which would be a scope-naming problem — or the
+    authorization decision is made on plan tier rather than scope. The docs say
+    the alert tools are gated on a Basic/Pro plan, which points at the latter.
+
+related:
+  authentication: authentication/alphaai-authentication.yml
+  mcp: mcp/alphaai-mcp.yml

@@ -1,0 +1,69 @@
+generated: '2026-08-11'
+method: probed
+source: >-
+  probe-domain-security.py (DNS/TLS/HTTP HEAD against the apis.yml and OpenAPI
+  servers[] hosts), corrected by direct observation of live API responses on
+  2026-08-11 where the automated HEAD could not read a header.
+hosts:
+  - host: alphai.io
+    https: true
+    tls_version: TLSv1.3
+    cert_expires: Oct 19 23:59:59 2026 GMT
+    hsts: false
+    note: >-
+      Next.js behind CloudFront. Serves CSP frame-ancestors 'none' and
+      X-Frame-Options DENY, but no Strict-Transport-Security on the marketing
+      host — the one host most likely to be typed into a browser bar.
+  - host: api.alphai.io
+    https: true
+    tls_version: TLSv1.3
+    cert_expires: Feb 10 23:59:59 2027 GMT
+    hsts: true
+    hsts_max_age: 31536000
+    hsts_include_subdomains: true
+    hsts_preload: true
+    observed_on: 'GET /api/news/ (401 response), 2026-08-11'
+    note: >-
+      The automated HEAD probe returned null because the API host root 404s
+      without emitting the header; a real API response does carry
+      "strict-transport-security: max-age=31536000; includeSubDomains; preload".
+      Corrected here from direct observation. The same responses carry
+      X-Content-Type-Options nosniff, X-Frame-Options DENY, Referrer-Policy
+      same-origin and Cross-Origin-Opener-Policy same-origin.
+  - host: mcp.alphai.io
+    https: true
+    tls_version: TLSv1.3
+    cert_expires: Feb 10 23:59:59 2027 GMT
+    hsts: null
+    note: Header not observed on the 401 challenge; not asserted either way.
+  - host: status.alphai.io
+    https: true
+    http_status: 200
+    note: Status page host, verified reachable 2026-08-11.
+
+domains:
+  - domain: alphai.io
+    dnssec: false
+    caa: []
+    spf: true
+    spf_record: 'v=spf1 include:zohomail.com ~all'
+    dmarc: false
+    dmarc_policy: null
+
+findings:
+  - >-
+    No DMARC record. With SPF set to a soft-fail (~all) and no DMARC policy, the
+    domain has no enforced anti-spoofing posture — and this provider sends
+    transactional email (alert digests, per-article alerts, webhook auto-disable
+    notices) from it. This is the most actionable item on the list.
+  - No CAA record, so any public CA may issue for the domain.
+  - DNSSEC is not enabled.
+  - >-
+    HSTS is present on the API host with a preload-eligible policy but absent on
+    the website host — the inverse of the usual pattern, and worth flagging
+    because the website is where the account dashboard and API-key issuance live.
+
+other_observations:
+  domain_verifications:
+    - postman-domain-verification (TXT) — corroborates the public Postman workspace
+    - smithery-verification (TXT) — a Smithery MCP registry claim; no live Smithery listing was found for this server on 2026-08-11

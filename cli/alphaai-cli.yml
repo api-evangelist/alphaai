@@ -1,0 +1,113 @@
+generated: '2026-08-11'
+method: searched
+source: >-
+  https://github.com/makeev/alphai-tui (README), https://crates.io/crates/alphai-tui,
+  and https://alphai.io/tui.
+description: >-
+  alphai-tui is a first-party terminal dashboard rather than a conventional
+  resource-CRUD CLI — there are no subcommands, because the AlphaAI REST API has
+  no write surface to drive. It is an interactive TUI (Rust + ratatui) whose
+  "command surface" is a set of startup flags plus in-app keybindings, with a
+  single non-interactive mode (--once). It is also the most actively developed
+  artifact the provider ships.
+
+name: alphai-tui
+language: rust
+framework: ratatui
+license: MIT
+repository: https://github.com/makeev/alphai-tui
+version: 0.13.0
+released: '2026-08-11'
+minimum_toolchain: Rust 1.85+
+shape: interactive TUI (no subcommand tree)
+
+install:
+  - method: homebrew
+    command: brew install makeev/tap/alphai-tui
+    platforms: [macos, linux]
+  - method: aur
+    command: paru -S alphai-tui-bin
+    platforms: [arch]
+  - method: apt
+    repository: https://makeev.github.io/alphai-tui-apt
+    command: sudo apt install alphai-tui
+    platforms: [debian 12+, ubuntu 22.04+]
+    architectures: [amd64, arm64]
+    signed: true
+    note: GPG-signed apt repo with a keyring install; standalone .deb files also published.
+  - method: shell installer
+    command: 'curl -LsSf https://github.com/makeev/alphai-tui/releases/latest/download/alphai-tui-installer.sh | sh'
+    platforms: [macos, linux]
+  - method: powershell installer
+    command: 'irm https://github.com/makeev/alphai-tui/releases/latest/download/alphai-tui-installer.ps1 | iex'
+    platforms: [windows]
+  - method: cargo
+    command: cargo install alphai-tui
+  - method: release archives
+    url: https://github.com/makeev/alphai-tui/releases
+    note: Per-platform archives published with checksums.
+
+invocation: 'alphai-tui [FLAGS] [TICKER...]    e.g. alphai-tui AAPL MSFT NVDA BTC-USD'
+
+flags:
+  - flag: -s, --source
+    default: yahoo
+    values: [yahoo, finnhub, alpaca]
+    meaning: Price data source (news/insider data always comes from AlphaAI).
+  - flag: -e, --every
+    default: '15'
+    meaning: Poll interval in seconds; also a live settings row.
+  - flag: -r, --range
+    default: 1d
+    values: [1d, 5d, 1mo, 3mo, 6mo, 1y, 2y]
+    meaning: History window at startup.
+  - flag: -i, --interval
+    default: 5m
+    values: [1m, 2m, 5m, 15m, 30m, 60m, 1d]
+    meaning: Candle size at startup.
+  - flag: --theme
+    default: default
+    meaning: Color preset (e.g. catppuccin-mocha); also a key and a settings row.
+  - flag: --once
+    meaning: Print quotes to stdout and exit — the only non-interactive mode, and the one usable from a script.
+  - flag: --config
+    meaning: Use an alternate config file; Save writes back to it.
+
+views:
+  - name: split
+    default: true
+    description: Watchlist and chart side by side over the news feed.
+  - name: news
+    description: >-
+      Enriched articles for the selected ticker, the whole market, or the 48h
+      trending top 10, next to a full AI-analysis card (price-impact prediction
+      with confidence, relevance and novelty scores, actionability, background
+      context, key entities, contrarian view).
+  - name: table
+    description: Watchlist with price, change, day range and unicode sparklines.
+  - name: chart
+    description: >-
+      Candlestick chart at half-block resolution with previous-close reference,
+      20/100 moving averages (simple or exponential), a volume panel and RSI(14).
+
+configuration:
+  precedence: CLI arguments > config file > built-in defaults
+  env_vars:
+    - ALPHAI_API_KEY
+    - FINNHUB_API_KEY
+    - APCA_API_KEY_ID
+    - APCA_API_SECRET_KEY
+  env_precedence: Environment variables win over the config file for API keys.
+
+api_binding:
+  base: https://api.alphai.io
+  auth: ALPHAI_API_KEY (an ak_live_ key)
+  tier_awareness: >-
+    The client adapts page size to the caller's plan automatically (20 per page,
+    50 on Pro keys) and collapses syndicated reprints on the market and trending
+    scopes — it consumes the same collapse/page_size conventions documented in
+    conventions/alphaai-conventions.yml.
+
+related:
+  packages: packages/alphaai-packages.yml
+  conventions: conventions/alphaai-conventions.yml

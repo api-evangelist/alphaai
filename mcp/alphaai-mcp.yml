@@ -1,0 +1,154 @@
+generated: '2026-08-11'
+method: searched
+status: published
+source: >-
+  https://alphai.io/mcp (client setup + tool list), https://alphai.io/llms.txt,
+  the official MCP registry entry io.github.makeev/alphai-mcp at
+  registry.modelcontextprotocol.io, and a live POST of tools/list against
+  https://mcp.alphai.io/mcp on 2026-08-11.
+description: >-
+  A first-party hosted MCP server over Streamable HTTP, registered in the
+  official Model Context Protocol registry and protected by a properly
+  advertised OAuth 2.1 authorization server with RFC 7591 dynamic client
+  registration. The same ak_live_ API key that works on the REST API also works
+  as a bearer token here, which is what makes it usable from headless agents.
+
+server:
+  name: alphai
+  transport: streamable-http
+  url: https://mcp.alphai.io/mcp
+  docs: https://alphai.io/mcp
+  registry:
+    id: io.github.makeev/alphai-mcp
+    url: https://registry.modelcontextprotocol.io
+    status: active
+    published: '2026-06-14'
+    version: 0.1.0
+    repository: https://github.com/makeev/alphai-mcp
+    note: >-
+      The registry names the repository github.com/makeev/alphai-mcp, which is
+      not public (404 on the GitHub API). The server itself is hosted, so the
+      private repo does not affect usability.
+
+authentication:
+  methods:
+    - type: oauth2.1
+      flow: authorization_code
+      pkce: S256
+      dynamic_client_registration: true      # RFC 7591
+      issuer: https://mcp.alphai.io
+      authorization_endpoint: https://mcp.alphai.io/oauth/authorize
+      token_endpoint: https://mcp.alphai.io/oauth/token
+      registration_endpoint: https://mcp.alphai.io/oauth/register
+      revocation_endpoint: https://mcp.alphai.io/oauth/revoke
+      introspection_endpoint: https://mcp.alphai.io/oauth/introspect
+      scopes: [tools.read, tools.bulk]
+      metadata: well-known/alphaai-oauth-authorization-server.json
+    - type: bearer
+      header: 'Authorization: Bearer ak_live_...'
+      note: >-
+        The REST API key doubles as an MCP bearer token for environments with no
+        browser (n8n, cron agents, CI). Header only — never a query parameter.
+  protected_resource_metadata: well-known/alphaai-oauth-protected-resource.json
+
+introspection:
+  attempted: '2026-08-11'
+  method: 'POST tools/list (jsonrpc 2.0), Accept: application/json, text/event-stream'
+  http_status: 401
+  gated: true
+  challenge: 'WWW-Authenticate: Bearer realm="alphai-mcp", resource_metadata="https://mcp.alphai.io/.well-known/oauth-protected-resource/mcp"'
+  note: >-
+    tools/list requires a token, so the live inputSchema per tool could not be
+    captured anonymously. The tool NAMES and their parameters below come from the
+    provider's own published documentation (/mcp, llms.txt, llms-full.txt) and
+    from the provider-published Claude Code skills in skills/ — not from a guess.
+    Full input schemas require authenticated introspection.
+  posture: >-
+    This is a correct 401. The challenge names a resource_metadata URL, that URL
+    resolves, and the body carries a how_to_connect string pointing at key
+    creation. Most gated MCP servers in the catalog return a bare 401.
+
+tools:
+  - name: alphai_news_search
+    category: news
+    description: Filtered feed query — free text or structured ticker/category/date/relevance filters. Cursor-paginated.
+    parameters_documented: [query, tickers, category, date range, min_relevance, cursor, collapse_stories]
+  - name: alphai_ticker_news
+    category: news
+    description: Latest news for one ticker, newest first.
+    parameters_documented: [ticker, include_insider, collapse_stories]
+  - name: alphai_trending
+    category: news
+    description: Top stories of the trailing 48h; min_relevance defaults to 8.
+    parameters_documented: [limit, min_relevance]
+  - name: alphai_actionable_now
+    category: news
+    description: Breaking, decision-grade news from the last few hours, gated on actionability. Empty outside US market hours is expected.
+  - name: alphai_macro
+    category: news
+    description: Market-wide macro events — central-bank decisions, inflation prints, commodities, geopolitics.
+  - name: alphai_calendar
+    category: calendar
+    description: Scheduled US macro releases (FOMC, CPI, jobs report, GDP, PCE).
+  - name: alphai_insider_news
+    category: insider
+    description: SEC Form 4 insider transactions by directors and officers, optionally per ticker.
+  - name: alphai_pair_analysis
+    category: analysis
+    description: Compare two tickers — overlapping stories and the cross-read between them.
+  - name: alphai_article
+    category: news
+    description: Fetch one article by uid with its full enrichment.
+    parameters_documented: [uid]
+  - name: alphai_tickers
+    category: symbols
+    description: Symbol discovery and search.
+    parameters_documented: [q]
+  - name: alphai_alerts_list
+    category: alerts
+    description: List the caller's active ticker alert subscriptions with per-alert filters and the tier limit.
+    tier_gated: Basic or Pro
+  - name: alphai_alerts_subscribe
+    category: alerts
+    description: Subscribe a ticker to news alerts. Partial update — omitted fields keep their current value; new subscriptions default min_relevance_score to 6.
+    parameters_documented: [ticker, category_filter, min_relevance_score]
+    tier_gated: Basic or Pro
+    write: true
+  - name: alphai_alerts_unsubscribe
+    category: alerts
+    description: Remove a ticker alert subscription.
+    parameters_documented: [ticker]
+    tier_gated: Basic or Pro
+    write: true
+  - name: search
+    category: chatgpt-connector
+    description: ChatGPT deep-research connector contract over the same feed.
+  - name: fetch
+    category: chatgpt-connector
+    description: ChatGPT deep-research connector contract — retrieve one document.
+
+tool_count: 15
+tool_count_note: >-
+  The provider's own sources disagree slightly on the count. llms.txt lists 11
+  alphai_* tools plus search/fetch; llms-full.txt says "Tools (13)" over the same
+  list; the /mcp page lists 13 alphai_* tools including alphai_macro and
+  alphai_calendar, which llms.txt omits. The union is 13 alphai_* tools plus the
+  two ChatGPT connector tools = 15. alphai_macro and alphai_calendar back
+  endpoints the changelog added on 2026-07-30 and 2026-07-31, so llms.txt is the
+  stale surface, not the /mcp page.
+
+write_surface:
+  read_only: false
+  writes: [alphai_alerts_subscribe, alphai_alerts_unsubscribe]
+  note: >-
+    Everything except the alert subscription pair is read-only. The two writes
+    act on the caller's own account (identity from the OAuth login) and are
+    tier-gated to Basic/Pro — on Free they return tier_not_paid.
+
+clients_documented:
+  [Claude Desktop, Claude Code, ChatGPT, Gemini, Cursor, VS Code, Windsurf, n8n, headless API key]
+
+related:
+  crosswalk: mcp/alphaai-tool-crosswalk.yml
+  skills: skills/_index.yml
+  scopes: scopes/alphaai-scopes.yml

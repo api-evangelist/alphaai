@@ -1,0 +1,100 @@
+generated: '2026-08-11'
+method: probed
+source: >-
+  Live GET of the RFC 8615 /.well-known/ surface on all three AlphaAI hosts
+  (alphai.io, api.alphai.io, mcp.alphai.io) on 2026-08-11.
+description: >-
+  AlphaAI splits its discovery surface across two hosts on purpose: the RFC 9116
+  security policy is served from the API host (api.alphai.io) and the OAuth 2.1
+  authorization-server + protected-resource metadata (RFC 8414 / RFC 9728) from
+  the MCP host (mcp.alphai.io). The marketing host serves nothing — every
+  /.well-known/ path on alphai.io returns a Next.js 404 HTML page, so no path on
+  that host was counted as a hit.
+
+hosts:
+  - host: https://api.alphai.io
+    documents:
+      - path: /.well-known/security.txt
+        status: 200
+        content_type: text/plain
+        file: alphaai-security.txt
+        note: RFC 9116; Expires 2027-07-04; Canonical self-reference is correct.
+      - path: /.well-known/openid-configuration
+        status: 404
+      - path: /.well-known/oauth-authorization-server
+        status: 404
+      - path: /.well-known/oauth-protected-resource
+        status: 404
+      - path: /.well-known/api-catalog
+        status: 404
+      - path: /.well-known/ai-plugin.json
+        status: 404
+      - path: /.well-known/agent-card.json
+        status: 404
+      - path: /.well-known/agent.json
+        status: 404
+
+  - host: https://mcp.alphai.io
+    documents:
+      - path: /.well-known/oauth-authorization-server
+        status: 200
+        content_type: application/json
+        file: alphaai-oauth-authorization-server.json
+        note: >-
+          RFC 8414. Advertises RFC 7591 dynamic client registration
+          (registration_endpoint), PKCE S256, authorization_code + refresh_token,
+          and two scopes (tools.read, tools.bulk).
+      - path: /.well-known/oauth-protected-resource
+        status: 200
+        content_type: application/json
+        file: alphaai-oauth-protected-resource.json
+        note: >-
+          RFC 9728. Names https://mcp.alphai.io/mcp as the protected resource.
+          The 401 on the MCP endpoint returns a matching WWW-Authenticate with
+          resource_metadata=https://mcp.alphai.io/.well-known/oauth-protected-resource/mcp
+          (path-suffixed variant, also 200).
+      - path: /.well-known/oauth-protected-resource/mcp
+        status: 200
+        note: Path-suffixed PRM named by the WWW-Authenticate challenge on POST /mcp.
+      - path: /.well-known/security.txt
+        status: 404
+      - path: /.well-known/openid-configuration
+        status: 404
+      - path: /.well-known/api-catalog
+        status: 404
+      - path: /.well-known/ai-plugin.json
+        status: 404
+      - path: /.well-known/agent-card.json
+        status: 404
+      - path: /.well-known/agent.json
+        status: 404
+
+  - host: https://alphai.io
+    note: >-
+      Every /.well-known/ path on the marketing host returns HTTP 404 with a
+      21KB Next.js HTML error page. No document served; recorded as a miss.
+    documents:
+      - path: /.well-known/security.txt
+        status: 404
+      - path: /.well-known/openid-configuration
+        status: 404
+      - path: /.well-known/oauth-authorization-server
+        status: 404
+      - path: /.well-known/oauth-protected-resource
+        status: 404
+      - path: /.well-known/api-catalog
+        status: 404
+      - path: /.well-known/ai-plugin.json
+        status: 404
+      - path: /.well-known/agent-card.json
+        status: 404
+      - path: /.well-known/agent.json
+        status: 404
+
+summary:
+  paths_probed: 25
+  documents_served: 4
+  security_txt: true
+  oauth_metadata: true
+  api_catalog: false
+  agent_card: false

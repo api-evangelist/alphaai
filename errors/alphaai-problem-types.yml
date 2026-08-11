@@ -1,0 +1,151 @@
+generated: '2026-08-11'
+method: derived
+source: >-
+  openapi/alphaai-rest-api-openapi.yml (components.responses + inline 4xx
+  responses on all 15 operations), enriched from https://alphai.io/developers and
+  https://alphai.io/llms-full.txt, and corroborated by live 401 responses
+  observed against https://api.alphai.io on 2026-08-11.
+format: custom-json
+rfc9457: false
+description: >-
+  AlphaAI does not use RFC 9457 problem+json. Errors are plain application/json
+  objects carrying a human message plus an `extra` object that holds the
+  machine-readable context. Despite not being RFC 9457, the `extra` block is
+  richer than most conforming implementations — the 400 for an unknown query
+  parameter returns the endpoint's complete accepted-parameter list.
+
+envelope:
+  content_type: application/json
+  message_fields: [message, detail, error]
+  message_field_note: >-
+    The spec's Error schema allows three alternative message fields and the API
+    genuinely uses more than one — a missing key returns `detail`, an invalid key
+    returns `message`. Callers must check all three.
+  context_field: extra
+  schema: '#/components/schemas/Error'
+
+problems:
+  - status: 401
+    name: Unauthorized
+    title: Missing or invalid API key
+    component: '#/components/responses/Unauthorized'
+    applies_to: all 15 operations
+    observed_bodies:
+      - '{"detail": "API key required."}'
+      - '{"message":"Invalid or revoked API key.","extra":{}}'
+    headers: 'WWW-Authenticate: Bearer'
+    remediation: >-
+      Create or rotate a key at https://alphai.io/account/api-keys and send it as
+      `Authorization: Bearer ak_live_...`. Never as a query parameter.
+
+  - status: 429
+    name: RateLimited
+    title: Rate limit exceeded
+    component: '#/components/responses/RateLimited'
+    applies_to: all 15 operations
+    cause: >-
+      Either the per-minute burst cap or the per-day volume cap. Both must be
+      under budget for a request to pass.
+    extra_fields: [tier, limit_per_minute, limit_per_day, retry_after_seconds, upgrade]
+    headers: [Retry-After, X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Reset]
+    remediation: >-
+      Honour Retry-After. A burst block is short (<=60s); a day-cap block is
+      capped at 3600s but the true reset is X-RateLimit-Reset. Below Pro, the
+      body's `upgrade` object carries the higher tiers' caps and a pricing URL.
+    detail: rate-limits/alphaai-rate-limits.yml
+
+  - status: 403
+    name: ArchiveGated
+    title: Cursor points past your plan's archive horizon
+    component: '#/components/responses/ArchiveGated'
+    applies_to:
+      - 'GET /api/news/'
+      - 'GET /api/news/insider/'
+      - 'GET /api/news/macro/'
+    cause: >-
+      Paging beyond the tier's news-archive window (Free 30 days, Basic 90,
+      Pro 180). First pages and cursors inside the horizon are unaffected.
+    extra_fields: [reason (archive_horizon), tier, archive_days, upgrade]
+    remediation: >-
+      Stop paging at the horizon, or upgrade. Discriminate on
+      extra.reason == "archive_horizon" — this is the only 403 the API returns,
+      and it is a quota signal, not an authorization failure, which is worth
+      handling separately from 401.
+
+  - status: 404
+    name: NotFound
+    title: No item with that identifier
+    component: '#/components/responses/NotFound'
+    applies_to:
+      - 'GET /api/news/{uid}/'
+      - 'GET /api/news/{uid}/related/'
+      - 'GET /api/symbols/{ticker}/'
+      - 'GET /api/symbols/{ticker}/sentiment-summary/'
+      - 'GET /api/symbols/{ticker}/insider-summary/'
+      - 'GET /api/symbols/{ticker}/insider-trades/'
+      - 'GET /api/symbols/sectors/{slug}/'
+    remediation: >-
+      For articles, the uid is 16 hex characters. For tickers, validate against
+      GET /api/symbols/ first — enrichment.tickers only ever contains symbols
+      present there. For sectors, use the slug form (e.g. financial-services).
+
+  - status: 400
+    name: InvalidCursor
+    title: Invalid cursor
+    applies_to:
+      - 'GET /api/news/'
+      - 'GET /api/news/insider/'
+      - 'GET /api/news/macro/'
+    cause: The cursor is opaque and must be reused verbatim from a prior next_cursor.
+    remediation: Never construct or mutate a cursor; pass next_cursor back unchanged.
+
+  - status: 400
+    name: UnknownParameter
+    title: Unknown or misspelled query parameter
+    applies_to:
+      - 'GET /api/news/'
+      - 'GET /api/calendar/'
+      - 'GET /api/symbols/'
+    extra_fields: [allowed_params, docs, fields]
+    remediation: >-
+      The response names the offending field AND returns allowed_params — the
+      endpoint's complete accepted-parameter list, read off its own schema — plus
+      a docs link. Individual entries in extra.fields may carry a did-you-mean
+      hint in their msg. Common remaps: limit/per_page -> page_size,
+      offset/page -> cursor.
+
+  - status: 400
+    name: MalformedTicker
+    title: Malformed ticker
+    applies_to:
+      - 'GET /api/symbols/{ticker}/sentiment-summary/'
+      - 'GET /api/symbols/{ticker}/insider-summary/'
+      - 'GET /api/symbols/{ticker}/insider-trades/'
+      - 'GET /api/symbols/{ticker}/peers/'
+    remediation: >-
+      Use the documented ticker forms — bare symbol for US equities/ETFs,
+      <SYM>-USD for crypto, Yahoo-style suffix for foreign listings.
+
+  - status: 400
+    name: InvalidDateWindow
+    title: Malformed date or invalid window
+    applies_to: ['GET /api/calendar/']
+    cause: A malformed date, to_date not after from_date, or a window over 400 days.
+    remediation: Keep the calendar window within 400 days and order the bounds.
+
+coverage:
+  operations_total: 15
+  operations_with_4xx: 15
+  distinct_conditions: 8
+  status_codes: [400, 401, 403, 404, 429]
+  server_errors_documented: false
+  gaps:
+    - >-
+      No 5xx response is documented on any operation. The spec says nothing about
+      what a server error looks like, so a caller cannot know whether the
+      envelope holds under failure.
+    - >-
+      There is no stable machine-readable error CODE. Discrimination relies on
+      the HTTP status plus, for the two quota conditions, an extra.reason string.
+      Two different 400 conditions on the same endpoint are distinguishable only
+      by parsing the human message.

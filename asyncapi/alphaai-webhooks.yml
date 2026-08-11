@@ -1,0 +1,108 @@
+generated: '2026-08-11'
+method: searched
+source: https://alphai.io/developers
+spec_type: null
+asyncapi_published: false
+description: >-
+  AlphaAI publishes no AsyncAPI document — /asyncapi.yaml returns 404 on both the
+  API host and the website, and there is no event catalog page. What it does
+  publish is a properly specified HMAC-signed webhook, documented to a standard
+  that would translate almost directly into AsyncAPI 3.0: one versioned event
+  type, a full payload shape, five delivery headers, a named signature
+  construction, an explicit retry ladder, an auto-disable rule, and SSRF
+  protection. This file captures that catalog verbatim rather than authoring a
+  spec on the provider's behalf.
+
+surface: webhooks
+tier_gated: Pro only
+endpoints_per_account: 5
+registration: https://alphai.io/account/webhooks
+
+events:
+  - type: news.matched.v1
+    versioned: true
+    description: >-
+      Fired when an article matches one of the account's ticker alert
+      subscriptions. One delivery per STORY, not per outlet — multiple outlets
+      covering the same event produce a single webhook.
+    payload:
+      id: 'event id (e.g. evt_42)'
+      type: news.matched.v1
+      created_at: ISO 8601 timestamp
+      delivery_attempt: integer
+      data.alert.ticker: the subscribed ticker that matched
+      data.article: >-
+        The full enriched article, identical in shape to the body of
+        GET /api/news/{uid}/ — so the webhook payload schema is the RichNewsArticle
+        schema already in openapi/alphaai-rest-api-openapi.yml.
+    payload_schema_ref: 'openapi/alphaai-rest-api-openapi.yml#/components/schemas/RichNewsArticle'
+
+delivery:
+  method: POST
+  content_type: application/json
+  user_agent: alphai-webhook/1.0
+  headers:
+    - name: X-Alphai-Event
+      value: news.matched
+      note: The header carries the UNVERSIONED name while the payload type carries the version suffix.
+    - name: X-Alphai-Delivery
+      value: delivery attempt number
+    - name: X-Alphai-Signature
+      value: 't=<timestamp>,v1=<hex-HMAC-SHA256>'
+  security:
+    scheme: HMAC-SHA256
+    construction: 'HMAC-SHA256(secret, timestamp + "." + body)'
+    modelled_on: Stripe signature scheme (the provider names it as such)
+    verification: Constant-time comparison against the v1 component.
+    replay_defence: The signed timestamp allows a freshness window check.
+  retry:
+    policy: exponential backoff
+    ladder: [1m, 5m, 30m, 2h, 12h]
+    auto_disable: After 10 consecutive 5xx responses the endpoint is disabled and the owner notified.
+  deduplication: >-
+    One story delivers once per ticker per 24-hour window, applied across email,
+    Telegram and webhook channels alike (changelog 2026-07-27).
+  ssrf_protection: Private and loopback destination addresses are refused.
+
+alert_channels:
+  - channel: webhook
+    tiers: [Pro]
+    documented: full technical specification
+  - channel: email
+    tiers: [Basic (daily digest), Pro (instant, per-article)]
+    documented: pricing page only; no technical specification
+  - channel: telegram
+    tiers: unknown
+    documented: >-
+      Named in the changelog's alert-deduplication entry and in the developers
+      sidebar, but carries no technical specification anywhere on the public
+      surface.
+
+subscription_management:
+  ui: https://alphai.io/account/webhooks
+  api: null
+  mcp: [alphai_alerts_list, alphai_alerts_subscribe, alphai_alerts_unsubscribe]
+  note: >-
+    Alert subscriptions can be managed through MCP tools but NOT through the REST
+    API — there is no /api/alerts/ route. Webhook ENDPOINT registration is
+    dashboard-only on every surface.
+
+gaps:
+  - >-
+    No AsyncAPI document. The webhook is documented well enough that publishing
+    one would be a mechanical exercise, and the payload schema already exists in
+    the OpenAPI as RichNewsArticle.
+  - >-
+    Exactly one event type. There is no delivery/failure event, no subscription
+    lifecycle event, and no test-fire or ping event documented.
+  - >-
+    The signature secret's provisioning and rotation are not documented.
+  - >-
+    X-Alphai-Event sends the unversioned name (news.matched) while the payload
+    carries news.matched.v1. A consumer routing on the header alone loses the
+    version.
+
+related:
+  openapi: openapi/alphaai-rest-api-openapi.yml
+  conventions: conventions/alphaai-conventions.yml
+  plans: plans/alphaai-plans-pricing.yml

@@ -1,0 +1,8 @@
+# AlphaAI security policy — https://alphai.io
+# RFC 9116. Report suspected vulnerabilities in the REST API (api.alphai.io),
+# the MCP server (mcp.alphai.io), or the website (alphai.io).
+Contact: https://alphai.io/contact
+Contact: mailto:support@alphai.io
+Expires: 2027-07-04T00:00:00.000Z
+Preferred-Languages: en
+Canonical: https://api.alphai.io/.well-known/security.txt

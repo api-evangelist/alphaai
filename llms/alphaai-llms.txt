@@ -1,0 +1,33 @@
+# alphai
+
+> Financial news for AI agents and trading bots. Every article is enriched
+> with per-ticker analysis, a category, and a 1-10 relevance score, then
+> served over REST and MCP. Free tier: 20 req/min + 100 req/day (evaluation), no credit card.
+
+## Docs
+
+- [Full agent reference](https://alphai.io/llms-full.txt): every REST endpoint with params, an example request and response, data semantics, and the MCP tool list in one fetch
+- [OpenAPI 3.1 spec](https://api.alphai.io/api/schema/): machine-readable REST reference for all news, ticker, and signal endpoints
+- [Developer guide & playground](https://alphai.io/developers): authentication, live request examples, response shapes
+- [MCP server setup](https://alphai.io/mcp): client walkthroughs for Claude, ChatGPT, Gemini, Cursor, n8n, and the SDKs
+- [Changelog](https://alphai.io/changelog): user-visible API and MCP changes, newest first
+
+## API quick facts
+
+- Base URL: https://api.alphai.io
+- Auth: `Authorization: Bearer ak_live_...` — create a free key at https://alphai.io/account/api-keys
+- Tiers (per minute · per day): Free 20·100 · Basic 60·10,000 · Pro 150·100,000
+- Data: category- and relevance-filtered news feed, per-ticker feeds, trending stories, 7-day AI sentiment and 30-day insider summaries per ticker, SEC Form 4 insider transactions as structured news (14 categories, relevance-scored 1-10)
+- Symbols: US equities + ETFs, cryptocurrencies (e.g. `BTC-USD`), and major European/Asian listings (e.g. `VOD.L`, `7203.T`) — discover via `GET /api/symbols` or the `alphai_tickers` MCP tool
+
+## MCP quick facts
+
+- Endpoint: https://mcp.alphai.io/mcp (Streamable HTTP)
+- Auth: OAuth 2.1 with dynamic client registration in the browser, or the same `ak_live_...` API key sent as an `Authorization: Bearer` header where no browser is available (n8n, cron agents, CI). Keys go in the header only, never in a query parameter.
+- Tools: alphai_news_search, alphai_ticker_news, alphai_trending, alphai_insider_news, alphai_article, alphai_tickers, alphai_pair_analysis, alphai_actionable_now, alphai_alerts_list, alphai_alerts_subscribe, alphai_alerts_unsubscribe, plus search and fetch (the ChatGPT deep-research contract). Alert tools need a Basic or Pro plan.
+- Plan limits match the REST tiers above
+
+## Optional
+
+- [Pricing](https://alphai.io/pricing): plan comparison
+- [Contact](https://alphai.io/contact): enterprise and custom needs

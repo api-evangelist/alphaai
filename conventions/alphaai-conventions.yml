@@ -1,0 +1,167 @@
+generated: '2026-08-11'
+method: searched
+source: >-
+  https://alphai.io/developers, https://alphai.io/llms-full.txt, and the
+  info.description + components.responses of
+  openapi/alphaai-rest-api-openapi.yml.
+description: >-
+  Cross-cutting request/response semantics that apply to every AlphaAI endpoint —
+  the behaviours OpenAPI does not fully express. AlphaAI is an unusually
+  disciplined read-only API: 15 operations, all GET, one auth scheme, one
+  pagination style, one error envelope.
+
+base_url: https://api.alphai.io
+api_style: REST over HTTPS, JSON responses, all operations GET
+
+authentication:
+  scheme: Bearer API key (`ak_live_`) in the Authorization header
+  required: every request
+  docs: https://alphai.io/developers
+  detail: authentication/alphaai-authentication.yml
+
+idempotency:
+  supported: false
+  mechanism: null
+  rationale: >-
+    Every one of the 15 published REST operations is a GET and is therefore
+    idempotent by HTTP semantics, but the provider publishes no idempotency-key
+    contract because there is nothing to protect — the public REST API has no
+    write surface at all. The only writes in the product
+    (alphai_alerts_subscribe / _unsubscribe) exist solely on the MCP server, and
+    the docs describe subscribe as a PARTIAL UPDATE that preserves omitted fields
+    on an existing subscription, which makes it naturally idempotent on repeat.
+  note: >-
+    Recorded as unsupported rather than "N/A" deliberately: no Idempotency-Key
+    header exists, so no idempotency pointer is emitted for this provider.
+
+pagination:
+  style: cursor
+  request_params:
+    cursor: Opaque, taken from a prior response's next_cursor. Omit for the newest page.
+    page_size: 10 default; 1-20 on all tiers; up to 50 on a Pro key.
+  response_fields:
+    results: array of enriched articles
+    next_cursor: opaque string, or null at the end of the feed
+  end_of_feed: 'next_cursor: null'
+  polling_mode: >-
+    `sort=ingested` returns rows in ingest order rather than publish order, with
+    cursor-based resumption — the documented way to do delta polling without
+    re-reading the feed. Added 2026-07-25.
+  offset_style_exception: >-
+    GET /api/symbols/ is the one endpoint that uses limit/offset instead of a
+    cursor. The docs advise caching it aggressively (~10k rows, alphabetical).
+  strictness: >-
+    Unknown or misspelled query parameters return 400 naming the field. The API
+    actively remaps the common mistakes: `limit` and `per_page` point the caller
+    to `page_size`; `offset` and `page` point to `cursor`.
+  docs: https://alphai.io/developers
+
+field_expansion:
+  supported: false
+  note: >-
+    No expand[]-style mechanism. Responses are returned fully enriched by
+    default — the enrichment block (ticker analysis, impact analysis, trading
+    value, context enhancement) is always inlined.
+
+response_shaping:
+  collapse_stories:
+    param: 'collapse=story (REST) / collapse_stories=true (MCP)'
+    effect: >-
+      One row per story instead of every syndicated reprint. Adds story_id,
+      sources_count and sources to each row. sources_count doubles as a
+      corroboration signal — how many outlets carry the event.
+    note: Clustering is by meaning, not headline overlap (changelog 2026-07-30).
+  min_relevance:
+    param: min_relevance
+    range: 1-10
+    default: 4
+    effect: Server-side filter on the 1-10 relevance score.
+  category_filters:
+    params: [category, exclude_categories]
+    forms: single value, CSV, or repeated parameter
+    semantics: OR
+
+metadata:
+  supported: false
+  note: No customer-writable metadata — the API is read-only.
+
+request_tracing:
+  request_id_header: null
+  note: >-
+    No request-id or correlation header is documented or observed on live
+    responses. This is a real gap for agent debugging: a caller reporting a bad
+    response has nothing to quote back to support. Responses do carry an ETag.
+
+caching:
+  etag: true
+  note: >-
+    Live responses carry an ETag and the website layer sits behind CloudFront.
+    The docs warn that a response served from a shared cache may omit the
+    X-RateLimit-* headers, since those reflect origin processing.
+
+versioning:
+  scheme: >-
+    Unversioned URI path (/api/...) with a semantic version on the OpenAPI
+    document itself (info.version, 1.24.0 at time of capture).
+  in_url: false
+  header: null
+  note: >-
+    There is no version selector of any kind on the wire — no path segment, no
+    header, no date pin. A caller always gets current behaviour. The spec version
+    is the only version signal, and it is observational, not selectable.
+  detail: lifecycle/alphaai-lifecycle.yml
+
+error_envelope:
+  shape: >-
+    A flat JSON object. The spec's Error schema permits three alternative message
+    fields — `message`, `error`, `detail` — plus an `extra` object; different
+    conditions use different ones.
+  fields:
+    message: human-readable error string (used by 400/403/429 and invalid-key 401)
+    detail: alternative message field (used by 404 and missing-key 401)
+    error: alternative message field
+    extra: machine-readable context, populated per condition
+  extra_contents:
+    '429': [tier, limit_per_minute, limit_per_day, retry_after_seconds, upgrade]
+    '403 archive': [reason (archive_horizon), tier, archive_days, upgrade]
+    '400 unknown param': [allowed_params, docs, fields]
+  rfc9457: false
+  note: >-
+    Not RFC 9457 problem+json — no type/title/status/instance, and responses are
+    application/json. But the `extra` block is genuinely machine-readable and
+    unusually good: the 400 for an unknown query parameter returns
+    allowed_params, the complete list the endpoint accepts read straight off its
+    own schema, plus a docs link and a did-you-mean hint per field. That is
+    better remediation data than most RFC 9457 implementations carry.
+  detail: errors/alphaai-problem-types.yml
+
+rate_limit_signaling:
+  headers: [X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Reset, Retry-After]
+  layer_reported: per-day only
+  exhaustion_status: 429
+  detail: rate-limits/alphaai-rate-limits.yml
+
+data_conventions:
+  ticker_forms:
+    us_equity_etf: bare symbol (AAPL, SPY)
+    crypto: '<SYM>-USD (BTC-USD, ETH-USD) — bare BTC is a US ETF'
+    foreign: Yahoo-style suffix (VOD.L, 7203.T, 0700.HK)
+    dual_listed: Prefer the US ADR for news (Toyota news is on TM).
+  relevance_score:
+    range: 1-10
+    determinism: Same article, same score.
+    meaning: Trading value of the article, not the importance of the company.
+  categories: 14
+  sentiment:
+    values: [positive, neutral, negative]
+    confidence: [high, medium, low]
+  content_restriction: >-
+    Full article bodies are never exposed (copyright). original.summary is
+    AI-generated and licensed as safe to redistribute.
+
+related:
+  authentication: authentication/alphaai-authentication.yml
+  errors: errors/alphaai-problem-types.yml
+  lifecycle: lifecycle/alphaai-lifecycle.yml
+  rate_limits: rate-limits/alphaai-rate-limits.yml
+  data_model: data-model/alphaai-data-model.yml
