@@ -1,0 +1,21 @@
+{
+  "repo": "alphaai",
+  "feeds": [
+    {
+      "source": "https://alphai.io/contact",
+      "feed_url": "https://alphai.io/contact",
+      "title": "",
+      "saved": 0,
+      "method": "none"
+    },
+    {
+      "source": "https://alphai.io/research",
+      "feed_url": "https://alphai.io/research/rss.xml",
+      "title": "",
+      "saved": 2,
+      "method": "discovered"
+    }
+  ],
+  "post_count": 2,
+  "fetched": "2026-08-15T12:22:01Z"
+}
