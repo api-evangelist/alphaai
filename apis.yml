@@ -27,7 +27,7 @@ description: >-
   api.alphai.io, a hosted MCP server with OAuth 2.1 and dynamic client registration at mcp.alphai.io, and HMAC-signed
   webhooks on the Pro tier — alongside first-party Python, TypeScript and Rust clients and a provider-published pack of
   Claude Code agent skills.
-url: https://alphaai.apievangelist.com/apis.yml
+url: https://raw.githubusercontent.com/api-evangelist/alphaai/refs/heads/main/apis.yml
 created: '2026-07-05'
 modified: '2026-08-11'
 specificationVersion: '0.21'
