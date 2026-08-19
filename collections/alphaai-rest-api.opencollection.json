@@ -1,0 +1,449 @@
+{
+  "opencollection": "1.0.0",
+  "info": {
+    "name": "alphai REST API",
+    "version": "1.24.0"
+  },
+  "request": {
+    "auth": {
+      "type": "bearer",
+      "token": "{{bearerToken}}"
+    }
+  },
+  "items": [
+    {
+      "info": {
+        "name": "news",
+        "type": "folder"
+      },
+      "items": [
+        {
+          "info": {
+            "name": "List news (cursor-paginated)",
+            "type": "http"
+          },
+          "http": {
+            "method": "GET",
+            "url": "https://api.alphai.io/api/news/",
+            "params": [
+              {
+                "name": "cursor",
+                "value": "",
+                "type": "query",
+                "description": "Opaque cursor from a prior response's `next_cursor`. Omit for the newest page."
+              },
+              {
+                "name": "symbol",
+                "value": "",
+                "type": "query",
+                "description": "Filter to articles that mention this ticker. US equities use the bare symbol (`NVDA`); cryptocurrencies use the `<SYM>-USD` form (`BTC-USD`), and a bare crypto name resolves to it (`DOGE` matches `DOGE-USD`); foreign listings use the Yahoo suffix (`VOD.L`). A delisted symbol returns its news history. A renamed company's current ticker also matches articles tagged with its former ticker, and any share class of an issuer matches articles tagged with its other listed classes (`GOOGL` includes rows tagged `GOOG`); article tags stay as published."
+              },
+              {
+                "name": "category",
+                "value": "",
+                "type": "query",
+                "description": "Keep only these categories. Accepts a single value, a CSV list (`category=earnings,insider`), or a repeated parameter — matches any of them (OR)."
+              },
+              {
+                "name": "exclude_categories",
+                "value": "",
+                "type": "query",
+                "description": "Drop these categories from the feed. Same single / CSV / repeated forms as `category`."
+              },
+              {
+                "name": "min_relevance",
+                "value": "",
+                "type": "query",
+                "description": "Override the default ≥4 threshold."
+              },
+              {
+                "name": "page_size",
+                "value": "",
+                "type": "query",
+                "description": "Items per page, default `10`. Any value from `1` to `20` is accepted on every tier; `21`-`50` requires a Pro key. A value outside `1`-`50`, or an over-`20` page without a Pro key, returns 400 — the page is never silently clamped. Pagination is otherwise unchanged: pass each response's `next_cursor` back as `cursor` regardless of page size."
+              },
+              {
+                "name": "collapse",
+                "value": "",
+                "type": "query",
+                "description": "`story` collapses coverage of one event to a single representative row (the story root): syndicated reprints and independently written articles about the same event, matched on headline and lead similarity. Populates the `story_id`, `sources_count` and `sources` fields on each item. Omit for the full feed (every article, story fields `null`). Only `story` is accepted; any other value returns 400.\nNote: row-level filters (`symbol`, `category`, `min_relevance`) apply to the story's representative root, so a story whose root does not match the filter is omitted entirely."
+              },
+              {
+                "name": "sort",
+                "value": "",
+                "type": "query",
+                "description": "`published` (default) is the reverse-chronological feed. `ingested` is delta-polling mode: rows in the order they became available, ascending, with `next_cursor` always returned (empty `results` = caught up) — see the endpoint description. All other filters apply unchanged in both modes. Cursors are mode-specific: a cursor is only valid with the sort mode that issued it (a mismatch returns 400)."
+              }
+            ]
+          },
+          "docs": "Feed of enriched articles, newest first. Default filter:\n`relevance_score >= 4` AND at least one active ticker. Pagination is\ncursor-based with a default page size of 10 (any size from 1 to 20 via\n`page_size=`; Pro keys go up to 50): omit `cursor` for the newest page,\nthen pass the\n`next_cursor` from each response to fetch the next (older) page.\n`next_cursor: null` means the end of the feed. Cursors are opaque — do\nnot construct or parse them; an invalid cursor returns 400. Archive\ndepth is tier"
+        },
+        {
+          "info": {
+            "name": "Trending news (last 48h)",
+            "type": "http"
+          },
+          "http": {
+            "method": "GET",
+            "url": "https://api.alphai.io/api/news/trending/"
+          },
+          "docs": "Top stories from the trailing 48h: `relevance_score >= 8`, ranked by relevance score decayed by article age, so a fresh story outranks an equally-scored stale one. At most two stories per ticker. Fixed size of 10, no pagination. Coverage of one story, syndicated reprints and independent write-ups of the same event alike, is collapsed to a single representative, and each item carries the `story_id`, `sources_count` and `sources` fields for the story it represents. Most stories are carried by a si"
+        },
+        {
+          "info": {
+            "name": "Insider-transaction news (SEC Form 4)",
+            "type": "http"
+          },
+          "http": {
+            "method": "GET",
+            "url": "https://api.alphai.io/api/news/insider/",
+            "params": [
+              {
+                "name": "cursor",
+                "value": "",
+                "type": "query",
+                "description": "Opaque cursor from a prior response's `next_cursor`. Omit for the newest page."
+              },
+              {
+                "name": "symbol",
+                "value": "",
+                "type": "query",
+                "description": "Filter to insider news that mentions this ticker. Delisted symbols return their history; a renamed company's current ticker also matches rows tagged with its former ticker."
+              },
+              {
+                "name": "min_relevance",
+                "value": "",
+                "type": "query",
+                "description": "Override the default ≥4 threshold. Insider rows score deterministically from the event's summed dollar value (plus buy/10b5-1 modifiers), so this acts as an \"only large trades\" dial — e.g. `min_relevance=7` keeps roughly $10M+ events."
+              },
+              {
+                "name": "page_size",
+                "value": "",
+                "type": "query",
+                "description": "Items per page, default `10`. Any value from `1` to `20` is accepted on every tier; `21`-`50` requires a Pro key. A value outside `1`-`50`, or an over-`20` page without a Pro key, returns 400."
+              },
+              {
+                "name": "sort",
+                "value": "",
+                "type": "query",
+                "description": "`published` (default) is the reverse-chronological feed. `ingested` is delta-polling mode, with the same contract as on `/api/news/`: rows in the order they became available, ascending, `next_cursor` always returned (empty `results` = caught up), and all other filters applied unchanged. Prefer it for watching insider activity — a Form 4 is filed days after the trade it reports, so a new event routinely lands below the newest page of the publish-ordered feed and a poller reading only the head misses it. Cursors are mode-specific: a cursor is only valid with the sort mode that issued it (a mismatch returns 400)."
+              }
+            ]
+          },
+          "docs": "Dedicated insider feed (`category=insider`): SEC EDGAR Form 4 insider\nactivity ONLY — one deterministic-templated row per filing event\n(a filing's non-derivative trades of one type and holding form,\naggregated: total shares, volume-weighted average price and executed\nrange, total value), surfaced shortly after filing, with the relevance\nscore computed from the event's total (size, buy vs. sell, 10b5-1 plan\nor not). Same enriched shape, ticker\nand `relevance_score >= 4` filtering, and cursor-base"
+        },
+        {
+          "info": {
+            "name": "Market-wide macro news (central banks, prints, commodities, geopolitics)",
+            "type": "http"
+          },
+          "http": {
+            "method": "GET",
+            "url": "https://api.alphai.io/api/news/macro/",
+            "params": [
+              {
+                "name": "cursor",
+                "value": "",
+                "type": "query",
+                "description": "Opaque cursor from a prior response's `next_cursor`. Omit for the newest page."
+              },
+              {
+                "name": "category",
+                "value": "",
+                "type": "query",
+                "description": "Narrow to a subset of the macro categories, comma-separated. Values outside `macro_economy`/`commodities`/`geopolitics` return 400 (the full category filter lives on `/api/news/`)."
+              },
+              {
+                "name": "min_relevance",
+                "value": "",
+                "type": "query",
+                "description": "Override the default ≥4 threshold. On release days the release itself scores 7-9, so `min_relevance=7` keeps roughly \"the events\" and drops the commentary."
+              },
+              {
+                "name": "page_size",
+                "value": "",
+                "type": "query",
+                "description": "Items per page, default `10`. Any value from `1` to `20` is accepted on every tier; `21`-`50` requires a Pro key. A value outside `1`-`50`, or an over-`20` page without a Pro key, returns 400."
+              },
+              {
+                "name": "sort",
+                "value": "",
+                "type": "query",
+                "description": "`published` (default) is the reverse-chronological feed. `ingested` is delta-polling mode, with the same contract as on `/api/news/`. Cursors are mode-specific: a cursor is only valid with the sort mode that issued it (a mismatch returns 400)."
+              }
+            ]
+          },
+          "docs": "Dedicated macro feed: the `macro_economy`, `commodities` and\n`geopolitics` categories in one stream — central-bank decisions and\nstatements (FOMC), inflation/jobs prints, oil and gold, geopolitical\nrisk. Same enriched shape, `relevance_score >= 4` floor and\ncursor-based pagination as `/api/news/`; equivalent to\n`/api/news/?category=macro_economy,commodities,geopolitics`, surfaced\nas a first-class route.\n\nMacro rows are market-wide, so most carry an empty `tickers` list —\nthat is by design (an FO"
+        },
+        {
+          "info": {
+            "name": "Get a news article by UID",
+            "type": "http"
+          },
+          "http": {
+            "method": "GET",
+            "url": "https://api.alphai.io/api/news/:uid/",
+            "params": [
+              {
+                "name": "uid",
+                "value": "",
+                "type": "path"
+              }
+            ]
+          },
+          "docs": "Get a news article by UID"
+        },
+        {
+          "info": {
+            "name": "Articles related to one article",
+            "type": "http"
+          },
+          "http": {
+            "method": "GET",
+            "url": "https://api.alphai.io/api/news/:uid/related/",
+            "params": [
+              {
+                "name": "uid",
+                "value": "",
+                "type": "path"
+              }
+            ]
+          },
+          "docs": "Up to 6 articles related to the given article: fresh articles sharing\na ticker first, then same-category recents as backfill. Same enriched\nshape and `relevance_score >= 4` filtering as `/api/news/`; insider\n(SEC Form 4) rows are excluded unless the base article is itself\ninsider. No pagination — the list is a fixed-size block.\n"
+        }
+      ]
+    },
+    {
+      "info": {
+        "name": "calendar",
+        "type": "folder"
+      },
+      "items": [
+        {
+          "info": {
+            "name": "Scheduled US macro releases (economic calendar)",
+            "type": "http"
+          },
+          "http": {
+            "method": "GET",
+            "url": "https://api.alphai.io/api/calendar/",
+            "params": [
+              {
+                "name": "from_date",
+                "value": "",
+                "type": "query",
+                "description": "Window start, inclusive. `YYYY-MM-DD` (UTC midnight) or an ISO datetime (naive = UTC). Default: today, UTC midnight."
+              },
+              {
+                "name": "to_date",
+                "value": "",
+                "type": "query",
+                "description": "Window end, exclusive. Same formats. Default `from_date` + 7 days; span capped at 400 days."
+              },
+              {
+                "name": "event_key",
+                "value": "",
+                "type": "query",
+                "description": "Narrow to specific series, comma-separated. Unknown keys return 400."
+              },
+              {
+                "name": "importance",
+                "value": "",
+                "type": "query",
+                "description": "Narrow by importance tier."
+              },
+              {
+                "name": "country",
+                "value": "",
+                "type": "query",
+                "description": "v1 covers US releases only."
+              }
+            ]
+          },
+          "docs": "The official forward schedule of US macro releases: FOMC decisions\n(with SEP and press-conference markers) and minutes, CPI, PPI, the\njobs report (nonfarm payrolls), GDP estimates (advance/second/third),\nPCE, advance retail sales, weekly jobless claims and JOLTS — sourced\nfrom the agencies' own schedule pages (Fed, BLS, BEA, Census, DOL).\n\nEach occurrence carries a stable `uid` (`US-CPI-2026-07`) that\nsurvives reschedules: a moved release keeps its identity, updates\n`scheduled_at` and reports `s"
+        }
+      ]
+    },
+    {
+      "info": {
+        "name": "symbols",
+        "type": "folder"
+      },
+      "items": [
+        {
+          "info": {
+            "name": "List active tickers",
+            "type": "http"
+          },
+          "http": {
+            "method": "GET",
+            "url": "https://api.alphai.io/api/symbols/",
+            "params": [
+              {
+                "name": "limit",
+                "value": "",
+                "type": "query",
+                "description": "Return at most this many symbols. Omit for the full list."
+              },
+              {
+                "name": "offset",
+                "value": "",
+                "type": "query",
+                "description": "Skip this many symbols from the start of the list."
+              },
+              {
+                "name": "search",
+                "value": "",
+                "type": "query",
+                "description": "Resolve a query to matching symbols: ticker-prefix, company-name substring, or the company's brand name where that differs from its registered name (`search=spacex` returns `SPCX`, registered as SPACE EXPLORATION TECHNOLOGIES CORP). Case-insensitive; exact ticker, exact name and brand matches rank above prefix and substring matches. Useful for finding the canonical form of a name (`search=bitcoin` returns `BTC-USD`)."
+              }
+            ]
+          },
+          "docs": "All active symbols (US equities, crypto, and foreign listings), alphabetical by ticker. ~10k entries — cache aggressively, or slice with the optional `limit`/`offset` params (the response stays a bare array either way). Pass `search` to resolve a name, brand or ticker prefix to its canonical symbol (`search=bitcoin` returns `BTC-USD`, `search=spacex` returns `SPCX`)."
+        },
+        {
+          "info": {
+            "name": "Symbol detail",
+            "type": "http"
+          },
+          "http": {
+            "method": "GET",
+            "url": "https://api.alphai.io/api/symbols/:ticker/",
+            "params": [
+              {
+                "name": "ticker",
+                "value": "",
+                "type": "path",
+                "description": "Ticker symbol. US equities are bare (`AAPL`); cryptocurrencies use the `<SYM>-USD` form (`BTC-USD`); foreign listings use the Yahoo suffix (`VOD.L`)."
+              }
+            ]
+          },
+          "docs": "Symbol detail"
+        },
+        {
+          "info": {
+            "name": "7-day AI sentiment rollup for one ticker",
+            "type": "http"
+          },
+          "http": {
+            "method": "GET",
+            "url": "https://api.alphai.io/api/symbols/:ticker/sentiment-summary/",
+            "params": [
+              {
+                "name": "ticker",
+                "value": "",
+                "type": "path",
+                "description": "Accepts the same ticker forms as the symbol detail endpoint: bare crypto names resolve to their `<SYM>-USD` listing (`DOGE` → `DOGE-USD`; the response echoes the resolved ticker), and delisted or renamed symbols stay addressable."
+              }
+            ]
+          },
+          "docs": "Counts of bullish / neutral / bearish per-ticker sentiment calls from\nthe enriched news flow over the trailing 7 days, plus per-day buckets.\nInsider (SEC Form 4) template rows are excluded — this reflects press\ncoverage, not filings.\n"
+        },
+        {
+          "info": {
+            "name": "30-day insider-transaction rollup for one ticker",
+            "type": "http"
+          },
+          "http": {
+            "method": "GET",
+            "url": "https://api.alphai.io/api/symbols/:ticker/insider-summary/",
+            "params": [
+              {
+                "name": "ticker",
+                "value": "",
+                "type": "path",
+                "description": "Accepts the same ticker forms as the symbol detail endpoint: bare crypto names resolve to their `<SYM>-USD` listing, and delisted or renamed symbols stay addressable. Crypto and foreign listings have no Form 4 flow, so they return zeros."
+              }
+            ]
+          },
+          "docs": "Aggregated SEC Form 4 activity over the trailing 30 days: buy/sell\ntransaction counts, dollar volumes, the share of transactions executed\nunder pre-arranged 10b5-1 plans, and the most active insiders ranked\nby absolute net value (buys minus sells).\n"
+        },
+        {
+          "info": {
+            "name": "Form 4 event history and chart aggregates for one ticker",
+            "type": "http"
+          },
+          "http": {
+            "method": "GET",
+            "url": "https://api.alphai.io/api/symbols/:ticker/insider-trades/",
+            "params": [
+              {
+                "name": "ticker",
+                "value": "",
+                "type": "path",
+                "description": "Accepts the same ticker forms as the symbol detail endpoint: bare crypto names resolve to their `<SYM>-USD` listing, and delisted or renamed symbols stay addressable. Crypto and foreign listings have no Form 4 flow, so they return empty history."
+              },
+              {
+                "name": "side",
+                "value": "",
+                "type": "query",
+                "description": "Filters the paginated `events` list only; the first page's aggregates always cover both sides."
+              },
+              {
+                "name": "cursor",
+                "value": "",
+                "type": "query",
+                "description": "Opaque keyset cursor from a prior response's `next_cursor`. Omit it for the newest page, the only one carrying the aggregates."
+              },
+              {
+                "name": "page_size",
+                "value": "",
+                "type": "query",
+                "description": "Events per page. Not tier-gated: every tier may request up to 200, so one request can load a chart's whole working set."
+              }
+            ]
+          },
+          "docs": "The complete per-ticker insider-trading payload behind\nalphai.io/stock/{ticker}/insider-trades: the paginated Form 4 event\nhistory plus everything a chart needs, in one request. One event is\na filing's whole tranche group (shares summed, the price\nvalue-weighted, a 10b5-1 ladder is ONE event), same folding as the\nfeed's `insider` block.\n\nThe first page (no `cursor`) also carries the aggregates: `summary`\n(3-month, 12-month and all-time windows plus the most active\ninsiders of the last 12 months)"
+        },
+        {
+          "info": {
+            "name": "Related tickers for one ticker",
+            "type": "http"
+          },
+          "http": {
+            "method": "GET",
+            "url": "https://api.alphai.io/api/symbols/:ticker/peers/",
+            "params": [
+              {
+                "name": "ticker",
+                "value": "",
+                "type": "path"
+              }
+            ]
+          },
+          "docs": "Other companies in the same industry (widening to the broader sector\nwhen the industry is thin) that carry recent enriched news, most\nrecently covered first. Powers the \"Related tickers\" links on the stock\nhub pages.\n"
+        },
+        {
+          "info": {
+            "name": "Stock directory — most-covered tickers and sector cards",
+            "type": "http"
+          },
+          "http": {
+            "method": "GET",
+            "url": "https://api.alphai.io/api/symbols/directory/"
+          },
+          "docs": "The hub index behind /stocks: the globally most-covered tickers over\nthe trailing window, plus one card per sector (size + its busiest\nnames). Ranked by recent enriched-news coverage.\n"
+        },
+        {
+          "info": {
+            "name": "One sector's most-covered tickers",
+            "type": "http"
+          },
+          "http": {
+            "method": "GET",
+            "url": "https://api.alphai.io/api/symbols/sectors/:slug/",
+            "params": [
+              {
+                "name": "slug",
+                "value": "",
+                "type": "path"
+              }
+            ]
+          },
+          "docs": "The tickers in a sector (by slug, e.g. `financial-services`), ranked by\nrecent enriched-news coverage. Powers the /stocks/{slug} sub-pages.\n"
+        }
+      ]
+    }
+  ],
+  "bundled": true
+}
