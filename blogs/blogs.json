@@ -9,13 +9,20 @@
       "method": "none"
     },
     {
+      "source": "https://alphai.io/research/rss.xml",
+      "feed_url": "https://alphai.io/research/rss.xml",
+      "title": "",
+      "saved": 0,
+      "method": "feed"
+    },
+    {
       "source": "https://alphai.io/research",
       "feed_url": "https://alphai.io/research/rss.xml",
       "title": "",
-      "saved": 2,
+      "saved": 0,
       "method": "discovered"
     }
   ],
-  "post_count": 2,
-  "fetched": "2026-08-15T12:22:01Z"
+  "post_count": 14,
+  "fetched": "2026-08-22T20:20:02Z"
 }
