@@ -44,102 +44,134 @@ tags:
   - LLM
   - Trading
 apis:
-  - name: AlphaAI REST API
-    description: >-
-      REST API for relevance-scored, ticker-linked financial news. Fifteen read-only operations across news feeds,
-      trending, macro, an economic calendar, SEC Form 4 insider data, symbols, and per-ticker sentiment and insider
-      rollups. Cursor-paginated, bearer API key auth, OpenAPI 3.1 served anonymously at /api/schema/.
-    humanURL: https://alphai.io/developers
-    baseURL: https://api.alphai.io
-    tags:
-      - Financial News
-      - Stock Market
-      - SEC Filings
-      - Insider Trading
-      - Fintech
-      - Market Data
-      - Sentiment
-      - AI Agents
-      - MCP
-      - LLM
-      - Trading
-    properties:
-      - type: OpenAPI
-        url: openapi/alphaai-rest-api-openapi.yml
-      - type: OpenAPI
-        url: https://api.alphai.io/api/schema/
-      - type: Overlay
-        url: overlays/alphaai-rest-api-overlay.yaml
-      - type: Documentation
-        url: https://alphai.io/developers
-      - type: APIReference
-        url: https://api.alphai.io/api/schema/swagger-ui/
-      - type: Conventions
-        url: conventions/alphaai-conventions.yml
-      - type: ErrorCatalog
-        url: errors/alphaai-problem-types.yml
-      - type: RateLimits
-        url: rate-limits/alphaai-rate-limits.yml
-      - type: DataModel
-        url: data-model/alphaai-data-model.yml
-      - type: Webhooks
-        url: asyncapi/alphaai-webhooks.yml
-  - name: AlphaAI MCP Server
-    description: >-
-      Hosted MCP server over Streamable HTTP exposing fifteen tools for news search, ticker news, trending,
-      actionable-now, macro, economic calendar, insider news, pair analysis, article retrieval, ticker discovery and
-      alert management, plus the ChatGPT deep-research search/fetch contract. OAuth 2.1 with PKCE and RFC 7591 dynamic
-      client registration, or the same API key as a bearer token for headless agents. Registered in the official MCP
-      registry as io.github.makeev/alphai-mcp.
-    humanURL: https://alphai.io/mcp
-    baseURL: https://mcp.alphai.io/mcp
-    tags:
-      - Financial News
-      - Stock Market
-      - SEC Filings
-      - Insider Trading
-      - Fintech
-      - Market Data
-      - Sentiment
-      - AI Agents
-      - MCP
-      - LLM
-      - Trading
-    properties:
-      - type: MCPServer
-        url: https://mcp.alphai.io/mcp
-      - type: MCPServer
-        url: mcp/alphaai-mcp.yml
-      - type: ToolCrosswalk
-        url: mcp/alphaai-tool-crosswalk.yml
-      - type: OAuthScopes
-        url: scopes/alphaai-scopes.yml
-      - type: Documentation
-        url: https://alphai.io/mcp
-  - name: AlphaAI Claude Code Skills
-    description: >-
-      Provider-published open-source pack of five Claude Code agent skills wrapping the MCP tools into ready-made
-      workflows: one-ticker brief, market pulse, insider-activity scan, two-ticker read-across, and alert management.
-      MIT licensed. Saved verbatim into skills/.
-    humanURL: https://github.com/makeev/alphai-claude-skills
-    baseURL: https://github.com/makeev/alphai-claude-skills
-    tags:
-      - Financial News
-      - Stock Market
-      - SEC Filings
-      - Insider Trading
-      - Fintech
-      - Market Data
-      - Sentiment
-      - AI Agents
-      - MCP
-      - LLM
-      - Trading
-    properties:
-      - type: AgentSkill
-        url: skills/_index.yml
-      - type: SourceCode
-        url: https://github.com/makeev/alphai-claude-skills
+- name: AlphaAI MCP Server
+  description: >-
+    Hosted MCP server over Streamable HTTP exposing fifteen tools for news search, ticker news, trending,
+    actionable-now, macro, economic calendar, insider news, pair analysis, article retrieval, ticker discovery
+    and alert management, plus the ChatGPT deep-research search/fetch contract. OAuth 2.1 with PKCE and
+    RFC 7591 dynamic client registration, or the same API key as a bearer token for headless agents. Registered
+    in the official MCP registry as io.github.makeev/alphai-mcp.
+  humanURL: https://alphai.io/mcp
+  baseURL: https://mcp.alphai.io/mcp
+  tags:
+  - Financial News
+  - Stock Market
+  - SEC Filings
+  - Insider Trading
+  - Fintech
+  - Market Data
+  - Sentiment
+  - AI Agents
+  - MCP
+  - LLM
+  - Trading
+  properties:
+  - type: MCPServer
+    url: https://mcp.alphai.io/mcp
+  - type: MCPServer
+    url: mcp/alphaai-mcp.yml
+  - type: ToolCrosswalk
+    url: mcp/alphaai-tool-crosswalk.yml
+  - type: OAuthScopes
+    url: scopes/alphaai-scopes.yml
+  - type: Documentation
+    url: https://alphai.io/mcp
+- name: AlphaAI Claude Code Skills
+  description: >-
+    Provider-published open-source pack of five Claude Code agent skills wrapping the MCP tools into ready-made
+    workflows: one-ticker brief, market pulse, insider-activity scan, two-ticker read-across, and alert
+    management. MIT licensed. Saved verbatim into skills/.
+  humanURL: https://github.com/makeev/alphai-claude-skills
+  baseURL: https://github.com/makeev/alphai-claude-skills
+  tags:
+  - Financial News
+  - Stock Market
+  - SEC Filings
+  - Insider Trading
+  - Fintech
+  - Market Data
+  - Sentiment
+  - AI Agents
+  - MCP
+  - LLM
+  - Trading
+  properties:
+  - type: AgentSkill
+    url: skills/_index.yml
+  - type: SourceCode
+    url: https://github.com/makeev/alphai-claude-skills
+- aid: alphaai:alphaai-calendar-api
+  name: AlphaAI Calendar API
+  description: Scheduled US macro releases (FOMC, CPI, jobs, GDP, PCE…).
+  humanURL: https://alphai.io/developers
+  baseURL: https://api.alphai.io
+  tags:
+  - calendar
+  properties:
+  - type: OpenAPI
+    url: openapi/alphaai-calendar-api-openapi.yml
+  - type: Documentation
+    url: https://alphai.io/developers
+  - type: APIReference
+    url: https://api.alphai.io/api/schema/swagger-ui/
+  - type: Conventions
+    url: conventions/alphaai-conventions.yml
+  - type: ErrorCatalog
+    url: errors/alphaai-problem-types.yml
+  - type: RateLimits
+    url: rate-limits/alphaai-rate-limits.yml
+  - type: DataModel
+    url: data-model/alphaai-data-model.yml
+  - type: Webhooks
+    url: asyncapi/alphaai-webhooks.yml
+- aid: alphaai:alphaai-news-api
+  name: AlphaAI News API
+  description: Relevance-scored, ticker-linked news.
+  humanURL: https://alphai.io/developers
+  baseURL: https://api.alphai.io
+  tags:
+  - news
+  properties:
+  - type: OpenAPI
+    url: openapi/alphaai-news-api-openapi.yml
+  - type: Documentation
+    url: https://alphai.io/developers
+  - type: APIReference
+    url: https://api.alphai.io/api/schema/swagger-ui/
+  - type: Conventions
+    url: conventions/alphaai-conventions.yml
+  - type: ErrorCatalog
+    url: errors/alphaai-problem-types.yml
+  - type: RateLimits
+    url: rate-limits/alphaai-rate-limits.yml
+  - type: DataModel
+    url: data-model/alphaai-data-model.yml
+  - type: Webhooks
+    url: asyncapi/alphaai-webhooks.yml
+- aid: alphaai:alphaai-symbols-api
+  name: AlphaAI Symbols API
+  description: Active equity, crypto, and foreign symbols (tickers).
+  humanURL: https://alphai.io/developers
+  baseURL: https://api.alphai.io
+  tags:
+  - symbols
+  properties:
+  - type: OpenAPI
+    url: openapi/alphaai-symbols-api-openapi.yml
+  - type: Documentation
+    url: https://alphai.io/developers
+  - type: APIReference
+    url: https://api.alphai.io/api/schema/swagger-ui/
+  - type: Conventions
+    url: conventions/alphaai-conventions.yml
+  - type: ErrorCatalog
+    url: errors/alphaai-problem-types.yml
+  - type: RateLimits
+    url: rate-limits/alphaai-rate-limits.yml
+  - type: DataModel
+    url: data-model/alphaai-data-model.yml
+  - type: Webhooks
+    url: asyncapi/alphaai-webhooks.yml
 maintainers:
   - FN: Mikhail Makeev
     email: support@alphai.io
@@ -150,6 +182,8 @@ generated:
   confidence: 95
   at: '2026-07-05T05:51:57.603Z'
 common:
+- type: Overlay
+  url: overlays/alphaai-rest-api-overlay.yaml
 - type: DeveloperPortal
   url: https://alphai.io/developers
 - type: Documentation
