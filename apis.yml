@@ -119,6 +119,8 @@ apis:
   humanURL: https://alphai.io/developers
   baseURL: https://api.alphai.io
   tags:
+  - Calendar
+  tags_raw:
   - calendar
   properties:
   - type: OpenAPI
@@ -143,6 +145,8 @@ apis:
   humanURL: https://alphai.io/developers
   baseURL: https://api.alphai.io
   tags:
+  - News
+  tags_raw:
   - news
   properties:
   - type: OpenAPI
@@ -167,6 +171,8 @@ apis:
   humanURL: https://alphai.io/developers
   baseURL: https://api.alphai.io
   tags:
+  - Symbols
+  tags_raw:
   - symbols
   properties:
   - type: OpenAPI
