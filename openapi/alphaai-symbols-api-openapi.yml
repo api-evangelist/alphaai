@@ -1,0 +1,1065 @@
+openapi: 3.2.0
+info:
+  title: alphai REST Symbols API
+  version: 1.24.0
+  description: 'Public REST API for alphai''s relevance-scored, ticker-linked financial news.
+
+    All endpoints accept `Authorization: Bearer ak_live_…` (issued from your
+
+    `/account/api-keys`). Authenticated traffic is metered per account with two
+
+    layers — a per-minute burst cap and a per-day volume cap (Free 20/min +
+
+    100/day, Basic 60/min + 10,000/day, Pro 150/min + 100,000/day); a request
+
+    passes only if both are under budget. The Free tier is for evaluation /
+
+    personal non-commercial use; Basic is licensed for internal commercial use;
+
+    Pro adds redistribution of the enriched feed. Send all API traffic to
+
+    `api.alphai.io`; a key is required on every request.
+
+
+    Every keyed response carries `X-RateLimit-Limit`, `X-RateLimit-Remaining`
+
+    and `X-RateLimit-Reset`; these report the per-day volume layer (Reset =
+
+    epoch seconds of the next 00:00 UTC reset) so you can watch your daily budget
+
+    without provoking a 429. A per-minute burst surfaces only as a 429 with a
+
+    short `Retry-After`. A 429 body also names your tier, its caps and an
+
+    `upgrade` block. The headers reflect origin processing, so a response
+
+    served from a shared cache may omit them.
+
+
+    News-archive depth is tiered: Free keys can page the feeds back 30 days,
+
+    Basic 90 days, Pro 180 days. Paging past your horizon returns `403`
+
+    with an `extra.reason` of `archive_horizon` (see the ArchiveGated response).
+
+    Coverage note: our collectors expanded in June 2026, so archive months
+
+    before 2026-06 hold fewer articles per day than the current feed.
+
+
+    Insider data (SEC EDGAR Form 4) flows through the same news shape:
+
+    `category=insider` rows in the feed, a dedicated `/api/news/insider/`
+
+    route, and 30-day per-ticker rollups at
+
+    `/api/symbols/{ticker}/insider-summary/`. For charts and analysis there
+
+    is `/api/symbols/{ticker}/insider-trades/`: the complete per-ticker
+
+    event history with 3m/12m/all-time rollups, weekly and monthly dollar
+
+    buckets, and every event of the trailing 12 months in one response.
+
+
+    Market-wide macro coverage (central-bank decisions, CPI/jobs prints,
+
+    commodities, geopolitics) is in the feed too, under the `macro_economy`,
+
+    `commodities` and `geopolitics` categories and a dedicated
+
+    `/api/news/macro/` route. Macro rows are market-wide events, so most
+
+    carry an empty `tickers` list — filter them by category, not by symbol.
+
+
+    The forward half of the macro loop is `/api/calendar/`: the official
+
+    schedule of upcoming US macro releases (FOMC decisions and minutes, CPI,
+
+    PPI, jobs report, GDP estimates, PCE, retail sales, jobless claims,
+
+    JOLTS), each with a stable occurrence `uid` that survives reschedules.
+
+    Ask the calendar what''s coming, then read `/api/news/macro/` for what a
+
+    release meant once it''s out.
+
+
+    Query parameters are validated strictly. An unknown or misspelled
+
+    parameter returns 400 naming the field, and the error body carries
+
+    `extra.allowed_params` — every parameter that endpoint accepts — so you
+
+    never have to guess. Common mix-ups also get a did-you-mean (`limit` and
+
+    `per_page` point to `page_size`; `offset`, `page`, `skip` and the
+
+    `after_id`/`before_id` family point to `cursor`; `ticker` points to
+
+    `symbol`). Parameters that belong to the MCP server rather than to this
+
+    API — free-text `q`/`query`/`search`, and `min_actionability` — say so
+
+    instead of failing silently.
+
+
+    See https://alphai.io/developers for the score and sentiment legend, and
+
+    https://alphai.io/pricing for tier limits.
+
+    '
+  contact:
+    name: alphai support
+    email: support@alphai.io
+    url: https://alphai.io/contact
+  license:
+    name: Proprietary
+servers:
+- url: https://api.alphai.io
+  description: Production (API host — key required)
+security:
+- apiKey: []
+tags:
+- name: symbols
+  description: Active equity, crypto, and foreign symbols (tickers).
+paths:
+  /api/symbols/:
+    get:
+      tags:
+      - symbols
+      summary: List active tickers
+      description: All active symbols (US equities, crypto, and foreign listings), alphabetical by ticker. ~10k entries — cache aggressively, or slice with the optional `limit`/`offset` params (the response stays a bare array either way). Pass `search` to resolve a name, brand or ticker prefix to its canonical symbol (`search=bitcoin` returns `BTC-USD`, `search=spacex` returns `SPCX`).
+      parameters:
+      - in: query
+        name: limit
+        description: Return at most this many symbols. Omit for the full list.
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 10000
+      - in: query
+        name: offset
+        description: Skip this many symbols from the start of the list.
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+      - in: query
+        name: search
+        description: 'Resolve a query to matching symbols: ticker-prefix, company-name substring, or the company''s brand name where that differs from its registered name (`search=spacex` returns `SPCX`, registered as SPACE EXPLORATION TECHNOLOGIES CORP). Case-insensitive; exact ticker, exact name and brand matches rank above prefix and substring matches. Useful for finding the canonical form of a name (`search=bitcoin` returns `BTC-USD`).'
+        schema:
+          type: string
+          example: bitcoin
+      responses:
+        '200':
+          description: List of active symbols.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Symbol'
+        '400':
+          description: Out-of-range or unknown query parameter.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /api/symbols/{ticker}/:
+    get:
+      tags:
+      - symbols
+      summary: Symbol detail
+      parameters:
+      - in: path
+        name: ticker
+        required: true
+        description: Ticker symbol. US equities are bare (`AAPL`); cryptocurrencies use the `<SYM>-USD` form (`BTC-USD`); foreign listings use the Yahoo suffix (`VOD.L`).
+        schema:
+          type: string
+          pattern: ^[A-Z0-9][A-Z0-9.\-]{0,19}$
+          example: BTC-USD
+      responses:
+        '200':
+          description: 'Symbol with extended metadata. Resolves delisted symbols too: check `status`, and `renamed_to` for the successor ticker when the company continues under a new symbol.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Symbol'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /api/symbols/{ticker}/sentiment-summary/:
+    get:
+      tags:
+      - symbols
+      summary: 7-day AI sentiment rollup for one ticker
+      description: 'Counts of bullish / neutral / bearish per-ticker sentiment calls from
+
+        the enriched news flow over the trailing 7 days, plus per-day buckets.
+
+        Insider (SEC Form 4) template rows are excluded — this reflects press
+
+        coverage, not filings.
+
+        '
+      parameters:
+      - in: path
+        name: ticker
+        required: true
+        description: 'Accepts the same ticker forms as the symbol detail endpoint: bare crypto names resolve to their `<SYM>-USD` listing (`DOGE` → `DOGE-USD`; the response echoes the resolved ticker), and delisted or renamed symbols stay addressable.'
+        schema:
+          type: string
+          pattern: ^[A-Z0-9][A-Z0-9.\-]{0,19}$
+      responses:
+        '200':
+          description: Sentiment counts for the window. Zeros mean a quiet week for a real listing; a ticker no symbol owns returns 404 instead.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TickerSentimentSummary'
+        '400':
+          description: Malformed ticker.
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /api/symbols/{ticker}/insider-summary/:
+    get:
+      tags:
+      - symbols
+      summary: 30-day insider-transaction rollup for one ticker
+      description: 'Aggregated SEC Form 4 activity over the trailing 30 days: buy/sell
+
+        transaction counts, dollar volumes, the share of transactions executed
+
+        under pre-arranged 10b5-1 plans, and the most active insiders ranked
+
+        by absolute net value (buys minus sells).
+
+        '
+      parameters:
+      - in: path
+        name: ticker
+        required: true
+        description: 'Accepts the same ticker forms as the symbol detail endpoint: bare crypto names resolve to their `<SYM>-USD` listing, and delisted or renamed symbols stay addressable. Crypto and foreign listings have no Form 4 flow, so they return zeros.'
+        schema:
+          type: string
+          pattern: ^[A-Z0-9][A-Z0-9.\-]{0,19}$
+      responses:
+        '200':
+          description: Insider activity stats for the window. Zeros mean no filings in the window for a real listing; a ticker no symbol owns returns 404 instead.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TickerInsiderSummary'
+        '400':
+          description: Malformed ticker.
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /api/symbols/{ticker}/insider-trades/:
+    get:
+      tags:
+      - symbols
+      summary: Form 4 event history and chart aggregates for one ticker
+      description: 'The complete per-ticker insider-trading payload behind
+
+        alphai.io/stock/{ticker}/insider-trades: the paginated Form 4 event
+
+        history plus everything a chart needs, in one request. One event is
+
+        a filing''s whole tranche group (shares summed, the price
+
+        value-weighted, a 10b5-1 ladder is ONE event), same folding as the
+
+        feed''s `insider` block.
+
+
+        The first page (no `cursor`) also carries the aggregates: `summary`
+
+        (3-month, 12-month and all-time windows plus the most active
+
+        insiders of the last 12 months), `series` (monthly buckets) and
+
+        `series_weekly` (Monday-keyed weekly buckets), both zero-filled up
+
+        to the current period and capped to the trailing 12 months, and
+
+        `chart_events` — every event of the trailing 12 months regardless of
+
+        pagination. The aggregates always cover both sides regardless of the
+
+        `side` filter, and they are `null` on cursor pages, which carry only
+
+        the next `events` chunk.
+
+
+        Side semantics on this surface follow the value flow: code P is
+
+        `buy`; codes S and D are both `sell`, because a code D sale back to
+
+        the issuer moves dollars off the insider''s position like any sale.
+
+        This deliberately differs from the feed''s `insider.side`, which
+
+        labels D as `other`; use `transaction_code` to tell a market sale
+
+        (S) from a sale to the issuer (D).
+
+        '
+      parameters:
+      - in: path
+        name: ticker
+        required: true
+        description: 'Accepts the same ticker forms as the symbol detail endpoint: bare crypto names resolve to their `<SYM>-USD` listing, and delisted or renamed symbols stay addressable. Crypto and foreign listings have no Form 4 flow, so they return empty history.'
+        schema:
+          type: string
+          pattern: ^[A-Z0-9][A-Z0-9.\-]{0,19}$
+      - in: query
+        name: side
+        description: Filters the paginated `events` list only; the first page's aggregates always cover both sides.
+        schema:
+          type: string
+          enum:
+          - buy
+          - sell
+          - all
+          default: all
+      - in: query
+        name: cursor
+        description: Opaque keyset cursor from a prior response's `next_cursor`. Omit it for the newest page, the only one carrying the aggregates.
+        schema:
+          type: string
+      - in: query
+        name: page_size
+        description: 'Events per page. Not tier-gated: every tier may request up to 200, so one request can load a chart''s whole working set.'
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 200
+          default: 20
+      responses:
+        '200':
+          description: One page of the event history. Empty arrays mean no recorded filings for a real listing; a ticker no symbol owns returns 404 instead.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TickerInsiderTrades'
+        '400':
+          description: Malformed ticker
+          cursor or query parameter.: null
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /api/symbols/{ticker}/peers/:
+    get:
+      tags:
+      - symbols
+      summary: Related tickers for one ticker
+      description: 'Other companies in the same industry (widening to the broader sector
+
+        when the industry is thin) that carry recent enriched news, most
+
+        recently covered first. Powers the "Related tickers" links on the stock
+
+        hub pages.
+
+        '
+      parameters:
+      - in: path
+        name: ticker
+        required: true
+        schema:
+          type: string
+          pattern: ^[A-Z0-9][A-Z0-9.\-]{0,19}$
+      responses:
+        '200':
+          description: Up to ten related tickers. A well-formed but unknown ticker, or one with no peers carrying recent news, returns an empty list.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SymbolPeers'
+        '400':
+          description: Malformed ticker.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /api/symbols/directory/:
+    get:
+      tags:
+      - symbols
+      summary: Stock directory — most-covered tickers and sector cards
+      description: 'The hub index behind /stocks: the globally most-covered tickers over
+
+        the trailing window, plus one card per sector (size + its busiest
+
+        names). Ranked by recent enriched-news coverage.
+
+        '
+      responses:
+        '200':
+          description: Most-active tickers and sector cards.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SymbolDirectory'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /api/symbols/sectors/{slug}/:
+    get:
+      tags:
+      - symbols
+      summary: One sector's most-covered tickers
+      description: 'The tickers in a sector (by slug, e.g. `financial-services`), ranked by
+
+        recent enriched-news coverage. Powers the /stocks/{slug} sub-pages.
+
+        '
+      parameters:
+      - in: path
+        name: slug
+        required: true
+        schema:
+          type: string
+          pattern: ^[a-z0-9-]+$
+      responses:
+        '200':
+          description: The sector and its most-covered tickers.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SectorSymbols'
+        '404':
+          description: Unknown sector slug.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+components:
+  schemas:
+    InsiderTradesSummary:
+      type: object
+      required:
+      - last_3m
+      - last_12m
+      - all_time
+      - top_insiders
+      properties:
+        last_3m:
+          $ref: '#/components/schemas/InsiderTradesWindow'
+        last_12m:
+          $ref: '#/components/schemas/InsiderTradesWindow'
+        all_time:
+          $ref: '#/components/schemas/InsiderTradesWindow'
+        top_insiders:
+          type: array
+          items:
+            $ref: '#/components/schemas/InsiderTradesTopInsider'
+          description: Most active reporters of the last 12 months, at most five.
+    SymbolDirectory:
+      type: object
+      required:
+      - most_active
+      - sectors
+      properties:
+        most_active:
+          type: array
+          items:
+            $ref: '#/components/schemas/DirectorySymbol'
+        sectors:
+          type: array
+          items:
+            $ref: '#/components/schemas/DirectorySector'
+    DirectorySector:
+      type: object
+      required:
+      - sector
+      - slug
+      - count
+      - top
+      properties:
+        sector:
+          type: string
+          example: Technology
+        slug:
+          type: string
+          example: technology
+        count:
+          type: integer
+          description: Total active symbols in the sector.
+        top:
+          type: array
+          items:
+            $ref: '#/components/schemas/DirectorySymbol'
+    InsiderTradeEvent:
+      type: object
+      description: 'One Form 4 economic event, same folding as the feed''s `InsiderEvent` (a filing''s whole tranche group: `shares` and `total_value_usd` are group sums, `avg_price_usd` is value-weighted over priced tranches, money and share fields are decimal STRINGS). Differences from the feed block: `side` here is only `buy` or `sell` (D counts as sell, see the endpoint description), and each event adds its stake impact, tranche count and the link to our enriched article.'
+      required:
+      - side
+      - transaction_code
+      - ownership_form
+      - shares
+      - tranche_count
+      - is_10b5_1
+      - late_filing
+      - insider_name
+      - insider_title
+      - is_officer
+      - is_director
+      - is_ten_percent_owner
+      - transaction_date
+      - filed_at
+      - news_uid
+      - news_title
+      - news_published
+      - has_article
+      properties:
+        side:
+          type: string
+          enum:
+          - buy
+          - sell
+          description: Value-flow label; `transaction_code` carries the raw code.
+        transaction_code:
+          type: string
+          description: Raw SEC Form 4 transaction code (`P`, `S`, `D`).
+          example: S
+        ownership_form:
+          type: string
+          enum:
+          - D
+          - I
+          description: Direct or indirect holding pool.
+        security_title:
+          type: string
+          description: Security class from the filing; empty when unreported.
+          example: Common Stock
+        shares:
+          type: string
+          description: Total shares across the event's tranches (decimal string).
+          example: '107692'
+        avg_price_usd:
+          type: string
+          nullable: true
+          description: Value-weighted average price per share over priced tranches. `null` when the filing prices no tranche.
+          example: '91.80'
+        total_value_usd:
+          type: string
+          nullable: true
+          description: Total USD value across priced tranches (a lower bound when some tranches are unpriced). `null` when no tranche is priced.
+          example: '9886021.65'
+        tranche_count:
+          type: integer
+          description: Fills folded into this event (a 10b5-1 ladder files many).
+          example: 8
+        stake_change_pct:
+          type: string
+          nullable: true
+          description: Percent of the pre-event position this event moved, as a decimal string; sells are negative ("-26.0" = sold 26% of the stake). `null` when the pre-event position cannot be reconstructed.
+          example: '-100.0'
+        is_10b5_1:
+          type: boolean
+          description: True when any tranche executed under a pre-arranged 10b5-1 plan.
+        late_filing:
+          type: boolean
+          description: The filing missed the SEC's two-business-day deadline, computed the same way as the feed's `InsiderEvent.late_filing`.
+        insider_name:
+          type: string
+          example: Intrator Michael N
+        insider_title:
+          type: string
+          example: CEO and President
+        is_officer:
+          type: boolean
+        is_director:
+          type: boolean
+        is_ten_percent_owner:
+          type: boolean
+        transaction_date:
+          type: string
+          format: date
+          description: Date of the group's last fill (a ladder can span days).
+          example: '2026-08-04'
+        filed_at:
+          type: string
+          format: date-time
+          description: When EDGAR accepted the filing (UTC).
+          example: '2026-08-07T00:36:56Z'
+        news_uid:
+          type: string
+          description: Uid of the enriched news row fronting this event; matches `original.uid` in the feeds.
+        news_title:
+          type: string
+        news_published:
+          type: string
+          format: date-time
+          description: Publish time of the fronting news row.
+        has_article:
+          type: boolean
+          description: Whether the alphai.io article page for `news_uid` exists. Events ingested by the historical backfill have no enriched article; render those without a link.
+    SectorSymbols:
+      type: object
+      required:
+      - sector
+      - slug
+      - count
+      - symbols
+      properties:
+        sector:
+          type: string
+        slug:
+          type: string
+        count:
+          type: integer
+        symbols:
+          type: array
+          items:
+            $ref: '#/components/schemas/DirectorySymbol'
+    SymbolPeers:
+      type: object
+      required:
+      - ticker
+      - group
+      - group_kind
+      - peers
+      properties:
+        ticker:
+          type: string
+        group:
+          type: string
+          description: Industry (or sector) label the peers share; empty if none.
+          example: Semiconductors
+        group_kind:
+          type: string
+          enum:
+          - industry
+          - sector
+          - ''
+          description: Whether the peers were grouped by industry or the broader sector.
+        peers:
+          type: array
+          items:
+            $ref: '#/components/schemas/SymbolPeer'
+    InsiderTradesMonthBucket:
+      type: object
+      required:
+      - month
+      - buy_count
+      - sell_count
+      - buy_value_usd
+      - sell_value_usd
+      properties:
+        month:
+          type: string
+          example: 2026-08
+          description: Calendar month, `YYYY-MM`.
+        buy_count:
+          type: integer
+        sell_count:
+          type: integer
+        buy_value_usd:
+          type: string
+          example: '0'
+          description: Decimal string in USD; `"0"` for a quiet side.
+        sell_value_usd:
+          type: string
+          example: '48200000.00'
+    TickerSentimentSummary:
+      type: object
+      required:
+      - ticker
+      - days
+      - total
+      - bullish
+      - neutral
+      - bearish
+      - daily
+      properties:
+        ticker:
+          type: string
+        days:
+          type: integer
+          example: 7
+        total:
+          type: integer
+          description: Articles with a sentiment call in the window.
+        bullish:
+          type: integer
+        neutral:
+          type: integer
+        bearish:
+          type: integer
+        daily:
+          type: array
+          items:
+            $ref: '#/components/schemas/DailySentimentBucket'
+    InsiderTradesTopInsider:
+      type: object
+      required:
+      - name
+      - title
+      - event_count
+      properties:
+        name:
+          type: string
+          example: Intrator Michael N
+        title:
+          type: string
+          description: Officer title from the filing; empty when the filer reports as a director only.
+        event_count:
+          type: integer
+        net_value_usd:
+          type: string
+          nullable: true
+          example: '-505000000.00'
+          description: Buys minus sells in USD over the last 12 months, as a decimal string; positive means a net buyer.
+    SymbolPeer:
+      type: object
+      required:
+      - ticker
+      - name
+      properties:
+        ticker:
+          type: string
+          example: AMD
+        name:
+          type: string
+          example: Advanced Micro Devices Inc
+    InsiderTradesWindow:
+      type: object
+      description: Event-level aggregates over one rolling window. Counts here are grouped EVENTS, not tranches, so they run lower than the transaction counts of `/api/symbols/{ticker}/insider-summary/`.
+      required:
+      - buy_count
+      - sell_count
+      - unique_insiders
+      - pct_10b5_1
+      properties:
+        buy_count:
+          type: integer
+        sell_count:
+          type: integer
+        buy_value_usd:
+          type: string
+          nullable: true
+          example: '1240000.00'
+          description: Decimal string in USD; null when the window has no priced buys.
+        sell_value_usd:
+          type: string
+          nullable: true
+          example: '224580213.05'
+          description: Decimal string in USD; null when the window has no priced sells.
+        unique_insiders:
+          type: integer
+          description: Distinct reporting owners in the window.
+        pct_10b5_1:
+          type: integer
+          minimum: 0
+          maximum: 100
+          description: Share of the window's events executed under a pre-arranged 10b5-1 plan, in percent.
+    InsiderTradesWeekBucket:
+      type: object
+      required:
+      - week_start
+      - buy_count
+      - sell_count
+      - buy_value_usd
+      - sell_value_usd
+      properties:
+        week_start:
+          type: string
+          format: date
+          description: Monday of the ISO week.
+        buy_count:
+          type: integer
+        sell_count:
+          type: integer
+        buy_value_usd:
+          type: string
+          example: '0'
+        sell_value_usd:
+          type: string
+          example: '9886021.65'
+    TopInsider:
+      type: object
+      required:
+      - name
+      - title
+      - transaction_count
+      properties:
+        name:
+          type: string
+          example: STEVENS MARK A
+        title:
+          type: string
+          description: Officer title from the filing; empty when the filer reports as a director only.
+        transaction_count:
+          type: integer
+        net_value:
+          type: string
+          nullable: true
+          example: '-221102600.00'
+          description: Buys minus sells in USD over the window, as a decimal string.
+    TickerInsiderTrades:
+      type: object
+      required:
+      - ticker
+      - events
+      - next_cursor
+      properties:
+        ticker:
+          type: string
+        coverage_start:
+          type: string
+          format: date
+          nullable: true
+          description: Earliest recorded transaction date for this ticker; charts should not claim history from before it. `null` when nothing is recorded.
+        summary:
+          nullable: true
+          allOf:
+          - $ref: '#/components/schemas/InsiderTradesSummary'
+          description: First page only; `null` on cursor pages.
+        series:
+          type: array
+          nullable: true
+          items:
+            $ref: '#/components/schemas/InsiderTradesMonthBucket'
+          description: Calendar-month buckets, zero-filled up to the current month and capped to the trailing 12 months. First page only; `null` on cursor pages.
+        series_weekly:
+          type: array
+          nullable: true
+          items:
+            $ref: '#/components/schemas/InsiderTradesWeekBucket'
+          description: ISO-week buckets keyed by their Monday, zero-filled up to the current week over the same 12-month horizon. First page only; `null` on cursor pages.
+        chart_events:
+          type: array
+          nullable: true
+          items:
+            $ref: '#/components/schemas/InsiderTradeEvent'
+          description: Every event of the trailing 12 months, both sides, independent of the paginated list below — a chart never shows a bar without its marks. First page only; `null` on cursor pages.
+        events:
+          type: array
+          items:
+            $ref: '#/components/schemas/InsiderTradeEvent'
+          description: One page of the event history, newest first; honors `side`.
+        next_cursor:
+          type: string
+          nullable: true
+          description: Opaque cursor for the next (older) page; `null` at the end of the recorded history.
+    Error:
+      type: object
+      properties:
+        message:
+          type: string
+        error:
+          type: string
+        detail:
+          type: string
+        extra:
+          type: object
+          description: 'Machine-readable context on capped responses: the 429 carries `tier`, `limit_per_minute`, `limit_per_day`, `retry_after_seconds`; the archive 403 carries `reason: archive_horizon`, `tier`, `archive_days`. Both include an `upgrade` object (higher tiers'' caps + `pricing_url`) for callers below Pro. A 400 caused by an unknown query parameter additionally carries `allowed_params` — the complete list this endpoint accepts, read straight off the endpoint''s own schema — plus `docs`, a link to the developer reference. Individual entries in `extra.fields` may carry a did-you-mean hint in their `msg`.'
+    DailySentimentBucket:
+      type: object
+      required:
+      - day
+      - bullish
+      - neutral
+      - bearish
+      properties:
+        day:
+          type: string
+          format: date
+        bullish:
+          type: integer
+        neutral:
+          type: integer
+        bearish:
+          type: integer
+    DirectorySymbol:
+      type: object
+      required:
+      - ticker
+      - name
+      - news_count
+      properties:
+        ticker:
+          type: string
+          example: NVDA
+        name:
+          type: string
+          example: NVIDIA Corp
+        news_count:
+          type: integer
+          description: Above-floor enriched-news rows mentioning the ticker in the window.
+    TickerInsiderSummary:
+      type: object
+      required:
+      - ticker
+      - days
+      - total_transactions
+      - buy_count
+      - sell_count
+      - pct_10b5_1
+      - top_insiders
+      properties:
+        ticker:
+          type: string
+        days:
+          type: integer
+          example: 30
+        total_transactions:
+          type: integer
+        buy_count:
+          type: integer
+        sell_count:
+          type: integer
+        buy_value_usd:
+          type: string
+          nullable: true
+          example: '1240000.00'
+          description: Decimal string in USD; null when the window has no buys.
+        sell_value_usd:
+          type: string
+          nullable: true
+          example: '224580213.05'
+          description: Decimal string in USD; null when the window has no sells.
+        pct_10b5_1:
+          type: integer
+          minimum: 0
+          maximum: 100
+          description: Share of transactions executed under a pre-arranged 10b5-1 plan, in percent.
+        top_insiders:
+          type: array
+          items:
+            $ref: '#/components/schemas/TopInsider'
+    Symbol:
+      type: object
+      required:
+      - symbol
+      - name
+      properties:
+        symbol:
+          type: string
+        name:
+          type: string
+        asset_type:
+          type: string
+          example: Stock
+          description: '`Stock`, `ETF`, or `Crypto`.'
+        exchange:
+          type: string
+          example: NASDAQ
+          description: 'TradingView exchange prefix. US: NYSE / NASDAQ / AMEX / OTC / CBOE (from SEC''s exchange mapping). Foreign listings carry their venue prefix (LSE, XETR, EURONEXT, TSE, HKEX, KRX, …); crypto carries the `CRYPTO` sentinel. Empty string when unknown.'
+        sector:
+          type: string
+        industry:
+          type: string
+        description:
+          type: string
+        website:
+          type: string
+          format: uri
+          nullable: true
+        brand_aliases:
+          type: array
+          items:
+            type: string
+          description: 'Lowercase names the issuer is known by, when they differ from `name` (`["spacex"]` on SPCX, registered as SPACE EXPLORATION TECHNOLOGIES CORP). Use them to match a name a user typed against a ticker. Usually empty: most issuers are already reachable by their registered name. List responses only.'
+          example:
+          - spacex
+        country:
+          type: string
+          description: ISO alpha-2 country of domicile. `US` for SEC-listed symbols, the listing venue's country for foreign listings. Empty for crypto — a coin has no domicile.
+          example: US
+        currency:
+          type: string
+          description: Trading currency. `USD` for SEC-listed symbols and crypto pairs, the local currency for foreign listings.
+          example: USD
+        status:
+          type: string
+          example: active
+          description: Listing status, `active` or `delisted`. Delisted symbols stay resolvable on this endpoint so their news history remains reachable.
+        delisted_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: When the symbol was marked delisted. Null for active symbols and for symbols delisted before July 2026.
+        renamed_to:
+          type: string
+          description: Set on a delisted symbol when the company continues under a new ticker (for example SATS became ECHO). Empty otherwise.
+  responses:
+    RateLimited:
+      description: 'Rate limit exceeded — either the per-minute burst cap or the per-day
+
+        volume cap. The `Retry-After` header tells you how long to wait (a burst
+
+        block is short, ≤60s; a day-cap block is capped at 3600s — the true reset
+
+        is `X-RateLimit-Reset`). The `X-RateLimit-*` trio shows the daily volume
+
+        budget. The body''s `extra` names your tier, its `limit_per_minute` /
+
+        `limit_per_day`, `retry_after_seconds`, and — below Pro — an `upgrade`
+
+        block with the higher tiers'' caps and the pricing URL.
+
+        '
+      headers:
+        Retry-After:
+          description: Seconds to wait before retrying (burst ≤60s; day cap ≤3600s).
+          schema:
+            type: integer
+        X-RateLimit-Limit:
+          description: The tier's per-day request volume.
+          schema:
+            type: integer
+        X-RateLimit-Remaining:
+          description: Requests left in today's volume budget.
+          schema:
+            type: integer
+        X-RateLimit-Reset:
+          description: Epoch seconds of the next 00:00 UTC reset.
+          schema:
+            type: integer
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Unauthorized:
+      description: Missing or invalid API key.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      description: No item with that identifier.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+  securitySchemes:
+    apiKey:
+      type: http
+      scheme: bearer
+      bearerFormat: ak_live_*
+      description: 'Token of the form `ak_live_<random>`. Issued from
+
+        `/account/api-keys` on the website. Send as `Authorization: Bearer …`.
+
+        '
