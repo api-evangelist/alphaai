@@ -201,6 +201,9 @@ generated:
   confidence: 95
   at: '2026-07-05T05:51:57.603Z'
 common:
+- type: License
+  name: MIT
+  url: https://github.com/makeev/alphai-claude-skills/blob/main/LICENSE
 - type: Overlay
   url: overlays/alphaai-rest-api-overlay.yaml
 - type: DeveloperPortal
