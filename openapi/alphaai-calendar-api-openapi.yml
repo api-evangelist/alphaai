@@ -2,114 +2,7 @@ openapi: 3.2.0
 info:
   title: alphai REST Calendar API
   version: 1.24.0
-  description: 'Public REST API for alphai''s relevance-scored, ticker-linked financial news.
-
-    All endpoints accept `Authorization: Bearer ak_live_…` (issued from your
-
-    `/account/api-keys`). Authenticated traffic is metered per account with two
-
-    layers — a per-minute burst cap and a per-day volume cap (Free 20/min +
-
-    100/day, Basic 60/min + 10,000/day, Pro 150/min + 100,000/day); a request
-
-    passes only if both are under budget. The Free tier is for evaluation /
-
-    personal non-commercial use; Basic is licensed for internal commercial use;
-
-    Pro adds redistribution of the enriched feed. Send all API traffic to
-
-    `api.alphai.io`; a key is required on every request.
-
-
-    Every keyed response carries `X-RateLimit-Limit`, `X-RateLimit-Remaining`
-
-    and `X-RateLimit-Reset`; these report the per-day volume layer (Reset =
-
-    epoch seconds of the next 00:00 UTC reset) so you can watch your daily budget
-
-    without provoking a 429. A per-minute burst surfaces only as a 429 with a
-
-    short `Retry-After`. A 429 body also names your tier, its caps and an
-
-    `upgrade` block. The headers reflect origin processing, so a response
-
-    served from a shared cache may omit them.
-
-
-    News-archive depth is tiered: Free keys can page the feeds back 30 days,
-
-    Basic 90 days, Pro 180 days. Paging past your horizon returns `403`
-
-    with an `extra.reason` of `archive_horizon` (see the ArchiveGated response).
-
-    Coverage note: our collectors expanded in June 2026, so archive months
-
-    before 2026-06 hold fewer articles per day than the current feed.
-
-
-    Insider data (SEC EDGAR Form 4) flows through the same news shape:
-
-    `category=insider` rows in the feed, a dedicated `/api/news/insider/`
-
-    route, and 30-day per-ticker rollups at
-
-    `/api/symbols/{ticker}/insider-summary/`. For charts and analysis there
-
-    is `/api/symbols/{ticker}/insider-trades/`: the complete per-ticker
-
-    event history with 3m/12m/all-time rollups, weekly and monthly dollar
-
-    buckets, and every event of the trailing 12 months in one response.
-
-
-    Market-wide macro coverage (central-bank decisions, CPI/jobs prints,
-
-    commodities, geopolitics) is in the feed too, under the `macro_economy`,
-
-    `commodities` and `geopolitics` categories and a dedicated
-
-    `/api/news/macro/` route. Macro rows are market-wide events, so most
-
-    carry an empty `tickers` list — filter them by category, not by symbol.
-
-
-    The forward half of the macro loop is `/api/calendar/`: the official
-
-    schedule of upcoming US macro releases (FOMC decisions and minutes, CPI,
-
-    PPI, jobs report, GDP estimates, PCE, retail sales, jobless claims,
-
-    JOLTS), each with a stable occurrence `uid` that survives reschedules.
-
-    Ask the calendar what''s coming, then read `/api/news/macro/` for what a
-
-    release meant once it''s out.
-
-
-    Query parameters are validated strictly. An unknown or misspelled
-
-    parameter returns 400 naming the field, and the error body carries
-
-    `extra.allowed_params` — every parameter that endpoint accepts — so you
-
-    never have to guess. Common mix-ups also get a did-you-mean (`limit` and
-
-    `per_page` point to `page_size`; `offset`, `page`, `skip` and the
-
-    `after_id`/`before_id` family point to `cursor`; `ticker` points to
-
-    `symbol`). Parameters that belong to the MCP server rather than to this
-
-    API — free-text `q`/`query`/`search`, and `min_actionability` — say so
-
-    instead of failing silently.
-
-
-    See https://alphai.io/developers for the score and sentiment legend, and
-
-    https://alphai.io/pricing for tier limits.
-
-    '
+  description: Public REST API for alphai's relevance-scored, ticker-linked financial news.
   contact:
     name: alphai support
     email: support@alphai.io
@@ -122,13 +15,13 @@ servers:
 security:
 - apiKey: []
 tags:
-- name: calendar
+- name: Calendar
   description: Scheduled US macro releases (FOMC, CPI, jobs, GDP, PCE…).
 paths:
   /api/calendar/:
     get:
       tags:
-      - calendar
+      - Calendar
       summary: Scheduled US macro releases (economic calendar)
       description: 'The official forward schedule of US macro releases: FOMC decisions
 
@@ -166,9 +59,7 @@ paths:
 
         ascending. Cancelled and postponed occurrences stay in the response
 
-        with their `schedule_status`.
-
-        '
+        with their `schedule_status`.'
       parameters:
       - in: query
         name: from_date
@@ -218,7 +109,53 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '429':
           $ref: '#/components/responses/RateLimited'
+      operationId: getApiCalendar
+      x-operation-id-source: derived
 components:
+  responses:
+    Unauthorized:
+      description: Missing or invalid API key.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    RateLimited:
+      description: 'Rate limit exceeded — either the per-minute burst cap or the per-day
+
+        volume cap. The `Retry-After` header tells you how long to wait (a burst
+
+        block is short, ≤60s; a day-cap block is capped at 3600s — the true reset
+
+        is `X-RateLimit-Reset`). The `X-RateLimit-*` trio shows the daily volume
+
+        budget. The body''s `extra` names your tier, its `limit_per_minute` /
+
+        `limit_per_day`, `retry_after_seconds`, and — below Pro — an `upgrade`
+
+        block with the higher tiers'' caps and the pricing URL.
+
+        '
+      headers:
+        Retry-After:
+          description: Seconds to wait before retrying (burst ≤60s; day cap ≤3600s).
+          schema:
+            type: integer
+        X-RateLimit-Limit:
+          description: The tier's per-day request volume.
+          schema:
+            type: integer
+        X-RateLimit-Remaining:
+          description: Requests left in today's volume budget.
+          schema:
+            type: integer
+        X-RateLimit-Reset:
+          description: Epoch seconds of the next 00:00 UTC reset.
+          schema:
+            type: integer
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
   schemas:
     Error:
       type: object
@@ -307,13 +244,6 @@ components:
         has_sep:
           type: boolean
           description: FOMC decisions only — true when the meeting carries a Summary of Economic Projections (the "dot plot").
-    CalendarEvents:
-      type: object
-      properties:
-        events:
-          type: array
-          items:
-            $ref: '#/components/schemas/CalendarEvent'
     NewsCategory:
       type: string
       description: '`market_movers` is for articles whose subject IS a notable price move ("AMD up 5% today"); `sector_analysis` is genuine sector-level analysis; `insider` covers SEC Form 4 insider transactions only. SEC 8-K filings categorize by their primary item: an earnings release (Item 2.02) is `earnings`, a completed acquisition or disposition (Item 2.01) is `mergers_acquisitions`, and the remaining events (material agreements, debt, executive changes, annual-meeting results) are `corporate_actions`.'
@@ -332,50 +262,13 @@ components:
       - insider
       - corporate_actions
       - other
-  responses:
-    RateLimited:
-      description: 'Rate limit exceeded — either the per-minute burst cap or the per-day
-
-        volume cap. The `Retry-After` header tells you how long to wait (a burst
-
-        block is short, ≤60s; a day-cap block is capped at 3600s — the true reset
-
-        is `X-RateLimit-Reset`). The `X-RateLimit-*` trio shows the daily volume
-
-        budget. The body''s `extra` names your tier, its `limit_per_minute` /
-
-        `limit_per_day`, `retry_after_seconds`, and — below Pro — an `upgrade`
-
-        block with the higher tiers'' caps and the pricing URL.
-
-        '
-      headers:
-        Retry-After:
-          description: Seconds to wait before retrying (burst ≤60s; day cap ≤3600s).
-          schema:
-            type: integer
-        X-RateLimit-Limit:
-          description: The tier's per-day request volume.
-          schema:
-            type: integer
-        X-RateLimit-Remaining:
-          description: Requests left in today's volume budget.
-          schema:
-            type: integer
-        X-RateLimit-Reset:
-          description: Epoch seconds of the next 00:00 UTC reset.
-          schema:
-            type: integer
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/Error'
-    Unauthorized:
-      description: Missing or invalid API key.
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/Error'
+    CalendarEvents:
+      type: object
+      properties:
+        events:
+          type: array
+          items:
+            $ref: '#/components/schemas/CalendarEvent'
   securitySchemes:
     apiKey:
       type: http

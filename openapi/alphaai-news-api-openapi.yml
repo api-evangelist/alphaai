@@ -2,114 +2,7 @@ openapi: 3.2.0
 info:
   title: alphai REST News API
   version: 1.24.0
-  description: 'Public REST API for alphai''s relevance-scored, ticker-linked financial news.
-
-    All endpoints accept `Authorization: Bearer ak_live_…` (issued from your
-
-    `/account/api-keys`). Authenticated traffic is metered per account with two
-
-    layers — a per-minute burst cap and a per-day volume cap (Free 20/min +
-
-    100/day, Basic 60/min + 10,000/day, Pro 150/min + 100,000/day); a request
-
-    passes only if both are under budget. The Free tier is for evaluation /
-
-    personal non-commercial use; Basic is licensed for internal commercial use;
-
-    Pro adds redistribution of the enriched feed. Send all API traffic to
-
-    `api.alphai.io`; a key is required on every request.
-
-
-    Every keyed response carries `X-RateLimit-Limit`, `X-RateLimit-Remaining`
-
-    and `X-RateLimit-Reset`; these report the per-day volume layer (Reset =
-
-    epoch seconds of the next 00:00 UTC reset) so you can watch your daily budget
-
-    without provoking a 429. A per-minute burst surfaces only as a 429 with a
-
-    short `Retry-After`. A 429 body also names your tier, its caps and an
-
-    `upgrade` block. The headers reflect origin processing, so a response
-
-    served from a shared cache may omit them.
-
-
-    News-archive depth is tiered: Free keys can page the feeds back 30 days,
-
-    Basic 90 days, Pro 180 days. Paging past your horizon returns `403`
-
-    with an `extra.reason` of `archive_horizon` (see the ArchiveGated response).
-
-    Coverage note: our collectors expanded in June 2026, so archive months
-
-    before 2026-06 hold fewer articles per day than the current feed.
-
-
-    Insider data (SEC EDGAR Form 4) flows through the same news shape:
-
-    `category=insider` rows in the feed, a dedicated `/api/news/insider/`
-
-    route, and 30-day per-ticker rollups at
-
-    `/api/symbols/{ticker}/insider-summary/`. For charts and analysis there
-
-    is `/api/symbols/{ticker}/insider-trades/`: the complete per-ticker
-
-    event history with 3m/12m/all-time rollups, weekly and monthly dollar
-
-    buckets, and every event of the trailing 12 months in one response.
-
-
-    Market-wide macro coverage (central-bank decisions, CPI/jobs prints,
-
-    commodities, geopolitics) is in the feed too, under the `macro_economy`,
-
-    `commodities` and `geopolitics` categories and a dedicated
-
-    `/api/news/macro/` route. Macro rows are market-wide events, so most
-
-    carry an empty `tickers` list — filter them by category, not by symbol.
-
-
-    The forward half of the macro loop is `/api/calendar/`: the official
-
-    schedule of upcoming US macro releases (FOMC decisions and minutes, CPI,
-
-    PPI, jobs report, GDP estimates, PCE, retail sales, jobless claims,
-
-    JOLTS), each with a stable occurrence `uid` that survives reschedules.
-
-    Ask the calendar what''s coming, then read `/api/news/macro/` for what a
-
-    release meant once it''s out.
-
-
-    Query parameters are validated strictly. An unknown or misspelled
-
-    parameter returns 400 naming the field, and the error body carries
-
-    `extra.allowed_params` — every parameter that endpoint accepts — so you
-
-    never have to guess. Common mix-ups also get a did-you-mean (`limit` and
-
-    `per_page` point to `page_size`; `offset`, `page`, `skip` and the
-
-    `after_id`/`before_id` family point to `cursor`; `ticker` points to
-
-    `symbol`). Parameters that belong to the MCP server rather than to this
-
-    API — free-text `q`/`query`/`search`, and `min_actionability` — say so
-
-    instead of failing silently.
-
-
-    See https://alphai.io/developers for the score and sentiment legend, and
-
-    https://alphai.io/pricing for tier limits.
-
-    '
+  description: Public REST API for alphai's relevance-scored, ticker-linked financial news.
   contact:
     name: alphai support
     email: support@alphai.io
@@ -122,13 +15,13 @@ servers:
 security:
 - apiKey: []
 tags:
-- name: news
+- name: News
   description: Relevance-scored, ticker-linked news.
 paths:
   /api/news/:
     get:
       tags:
-      - news
+      - News
       summary: List news (cursor-paginated)
       description: 'Feed of enriched articles, newest first. Default filter:
 
@@ -228,9 +121,7 @@ paths:
 
         403 below is keyed on the age of the first row you have not read yet,
 
-        so it fires on a delta poller that never paged back at all.
-
-        '
+        so it fires on a delta poller that never paged back at all.'
       parameters:
       - in: query
         name: cursor
@@ -313,10 +204,12 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '429':
           $ref: '#/components/responses/RateLimited'
+      operationId: getApiNews
+      x-operation-id-source: derived
   /api/news/trending/:
     get:
       tags:
-      - news
+      - News
       summary: Trending news (last 48h)
       description: 'Top stories from the trailing 48h: `relevance_score >= 8`, ranked by relevance score decayed by article age, so a fresh story outranks an equally-scored stale one. At most two stories per ticker. Fixed size of 10, no pagination. Coverage of one story, syndicated reprints and independent write-ups of the same event alike, is collapsed to a single representative, and each item carries the `story_id`, `sources_count` and `sources` fields for the story it represents. Most stories are carried by a single outlet, so `sources_count` is usually 1; see its field description.'
       responses:
@@ -332,10 +225,12 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '429':
           $ref: '#/components/responses/RateLimited'
+      operationId: getApiNewsTrending
+      x-operation-id-source: derived
   /api/news/insider/:
     get:
       tags:
-      - news
+      - News
       summary: Insider-transaction news (SEC Form 4)
       description: 'Dedicated insider feed (`category=insider`): SEC EDGAR Form 4 insider
 
@@ -372,9 +267,7 @@ paths:
 
         is identical to `/api/news/?sort=ingested` — see that endpoint for the
 
-        full description.
-
-        '
+        full description.'
       parameters:
       - in: query
         name: cursor
@@ -430,10 +323,12 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '429':
           $ref: '#/components/responses/RateLimited'
+      operationId: getApiNewsInsider
+      x-operation-id-source: derived
   /api/news/macro/:
     get:
       tags:
-      - news
+      - News
       summary: Market-wide macro news (central banks, prints, commodities, geopolitics)
       description: 'Dedicated macro feed: the `macro_economy`, `commodities` and
 
@@ -463,9 +358,7 @@ paths:
 
         To watch for new releases, poll with `sort=ingested` — same delta
 
-        contract as `/api/news/?sort=ingested`.
-
-        '
+        contract as `/api/news/?sort=ingested`.'
       parameters:
       - in: query
         name: cursor
@@ -521,10 +414,12 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '429':
           $ref: '#/components/responses/RateLimited'
+      operationId: getApiNewsMacro
+      x-operation-id-source: derived
   /api/news/{uid}/:
     get:
       tags:
-      - news
+      - News
       summary: Get a news article by UID
       parameters:
       - in: path
@@ -546,10 +441,12 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '429':
           $ref: '#/components/responses/RateLimited'
+      operationId: getApiNewsByUid
+      x-operation-id-source: derived
   /api/news/{uid}/related/:
     get:
       tags:
-      - news
+      - News
       summary: Articles related to one article
       description: 'Up to 6 articles related to the given article: fresh articles sharing
 
@@ -559,9 +456,7 @@ paths:
 
         (SEC Form 4) rows are excluded unless the base article is itself
 
-        insider. No pagination — the list is a fixed-size block.
-
-        '
+        insider. No pagination — the list is a fixed-size block.'
       parameters:
       - in: path
         name: uid
@@ -590,8 +485,52 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '429':
           $ref: '#/components/responses/RateLimited'
+      operationId: getApiNewsByUidRelated
+      x-operation-id-source: derived
 components:
   schemas:
+    TickerAnalysis:
+      type: object
+      properties:
+        ticker:
+          type: string
+        relevance_context:
+          type: string
+        impact_analysis:
+          $ref: '#/components/schemas/ImpactAnalysis'
+    Sentiment:
+      type: string
+      enum:
+      - positive
+      - neutral
+      - negative
+    Topic:
+      type: object
+      required:
+      - topic
+      - relevance
+      properties:
+        topic:
+          type: string
+        relevance:
+          type: number
+          format: float
+    NewsTradingValue:
+      type: object
+      properties:
+        actionability_score:
+          $ref: '#/components/schemas/Actionability'
+        information_novelty:
+          type: integer
+          minimum: 0
+          maximum: 10
+          description: 'How much NEW information the article carries (1–10), kept separate from relevance: a mega-cap post-earnings recap is high relevance but low novelty. 0 on rows enriched before the field existed.'
+        timing_relevance:
+          type: string
+        market_sentiment_alignment:
+          type: string
+        estimated_read_time:
+          type: string
     KeyEntity:
       type: object
       properties:
@@ -601,6 +540,27 @@ components:
           type: string
           example: company
         description:
+          type: string
+    Error:
+      type: object
+      properties:
+        message:
+          type: string
+        error:
+          type: string
+        detail:
+          type: string
+        extra:
+          type: object
+          description: 'Machine-readable context on capped responses: the 429 carries `tier`, `limit_per_minute`, `limit_per_day`, `retry_after_seconds`; the archive 403 carries `reason: archive_horizon`, `tier`, `archive_days`. Both include an `upgrade` object (higher tiers'' caps + `pricing_url`) for callers below Pro. A 400 caused by an unknown query parameter additionally carries `allowed_params` — the complete list this endpoint accepts, read straight off the endpoint''s own schema — plus `docs`, a link to the developer reference. Individual entries in `extra.fields` may carry a did-you-mean hint in their `msg`.'
+    IndirectMarketEffects:
+      type: object
+      properties:
+        sector_implications:
+          type: string
+        regional_market_impact:
+          type: string
+        global_market_relevance:
           type: string
     RichNewsArticle:
       type: object
@@ -637,15 +597,41 @@ components:
           allOf:
           - $ref: '#/components/schemas/InsiderEvent'
           description: '`/api/news/insider/` only — the structured SEC Form 4 event block. `null` on every other endpoint and on rows without paired transaction data.'
-    IndirectMarketEffects:
+    NewsContextEnhancement:
       type: object
       properties:
-        sector_implications:
+        background_context:
           type: string
-        regional_market_impact:
+        impact_analysis:
           type: string
-        global_market_relevance:
+        key_entities:
+          type: array
+          items:
+            $ref: '#/components/schemas/KeyEntity'
+        market_relevance_summary:
           type: string
+        estimated_read_time_minutes:
+          type: integer
+    AITradingInsights:
+      type: object
+      properties:
+        ticker_analysis:
+          type: array
+          items:
+            $ref: '#/components/schemas/TickerAnalysis'
+        news_trading_value:
+          $ref: '#/components/schemas/NewsTradingValue'
+        indirect_market_effects:
+          $ref: '#/components/schemas/IndirectMarketEffects'
+        alternative_perspectives:
+          $ref: '#/components/schemas/AlternativePerspectives'
+    Actionability:
+      type: string
+      enum:
+      - high
+      - medium
+      - low
+      - negligible
     NewsPagination:
       type: object
       required:
@@ -660,68 +646,6 @@ components:
           type: string
           nullable: true
           description: 'Opaque cursor for the next page. Pass it back as `?cursor=` with the same `sort` mode. Default (`sort=published`) feed: the next older page, `null` when the end of the feed has been reached. Delta mode (`sort=ingested`): always non-null — it is your polling position; empty `results` means caught up, keep the cursor and poll again later.'
-    EnrichedArticle:
-      type: object
-      properties:
-        category:
-          $ref: '#/components/schemas/NewsCategory'
-        tickers:
-          type: array
-          items:
-            type: string
-          description: Validated tickers the article mentions — only symbols present in `/api/symbols/` survive enrichment-time verification against the article text. Mirrors `ai_trading_insights.ticker_analysis[].ticker`.
-          example:
-          - NVDA
-        relevance_score:
-          type: integer
-          minimum: 1
-          maximum: 10
-          description: 'How much trading value the article itself carries (rates the
-
-            article, not the company; deterministic — same article, same
-
-            score):
-
-            1–2 no trading relevance · 3–4 derivative content about
-
-            already-known events · 5–6 macro/sector datapoints, minor-but-real
-
-            company news · 7–8 real company news with a fresh catalyst ·
-
-            9–10 primary, material, newly disclosed.
-
-            SEC Form 4 rows are scored from the transaction itself (size,
-
-            buy vs. sell, 10b5-1 plan or not) rather than by the model.
-
-            '
-        ai_trading_insights:
-          $ref: '#/components/schemas/AITradingInsights'
-        news_context_enhancement:
-          $ref: '#/components/schemas/NewsContextEnhancement'
-    Actionability:
-      type: string
-      enum:
-      - high
-      - medium
-      - low
-      - negligible
-    NewsTradingValue:
-      type: object
-      properties:
-        actionability_score:
-          $ref: '#/components/schemas/Actionability'
-        information_novelty:
-          type: integer
-          minimum: 0
-          maximum: 10
-          description: 'How much NEW information the article carries (1–10), kept separate from relevance: a mega-cap post-earnings recap is high relevance but low novelty. 0 on rows enriched before the field existed.'
-        timing_relevance:
-          type: string
-        market_sentiment_alignment:
-          type: string
-        estimated_read_time:
-          type: string
     ImpactAnalysis:
       type: object
       properties:
@@ -734,6 +658,13 @@ components:
         confidence:
           $ref: '#/components/schemas/Confidence'
         reasoning:
+          type: string
+    AlternativePerspectives:
+      type: object
+      properties:
+        contrarian_view:
+          type: string
+        overlooked_factors:
           type: string
     InsiderEvent:
       type: object
@@ -805,68 +736,6 @@ components:
         late_filing:
           type: boolean
           description: 'The filing missed the SEC''s two-business-day deadline (Rule 16a-3(g)). Computed on Eastern dates, since EDGAR accepts filings until ~22:00 ET, and with one weekday of slack so a trade in a holiday week is not flagged: true when more than three weekday-days separate `transaction_date` from the filing. About 3% of events carry it; the long tail is catch-up filings covering trades from years earlier.'
-    TickerAnalysis:
-      type: object
-      properties:
-        ticker:
-          type: string
-        relevance_context:
-          type: string
-        impact_analysis:
-          $ref: '#/components/schemas/ImpactAnalysis'
-    Confidence:
-      type: string
-      enum:
-      - high
-      - medium
-      - low
-    NewsCategory:
-      type: string
-      description: '`market_movers` is for articles whose subject IS a notable price move ("AMD up 5% today"); `sector_analysis` is genuine sector-level analysis; `insider` covers SEC Form 4 insider transactions only. SEC 8-K filings categorize by their primary item: an earnings release (Item 2.02) is `earnings`, a completed acquisition or disposition (Item 2.01) is `mergers_acquisitions`, and the remaining events (material agreements, debt, executive changes, annual-meeting results) are `corporate_actions`.'
-      enum:
-      - earnings
-      - mergers_acquisitions
-      - regulation
-      - macro_economy
-      - sector_analysis
-      - market_movers
-      - technology
-      - commodities
-      - crypto
-      - ipo
-      - geopolitics
-      - insider
-      - corporate_actions
-      - other
-    Sentiment:
-      type: string
-      enum:
-      - positive
-      - neutral
-      - negative
-    Error:
-      type: object
-      properties:
-        message:
-          type: string
-        error:
-          type: string
-        detail:
-          type: string
-        extra:
-          type: object
-          description: 'Machine-readable context on capped responses: the 429 carries `tier`, `limit_per_minute`, `limit_per_day`, `retry_after_seconds`; the archive 403 carries `reason: archive_horizon`, `tier`, `archive_days`. Both include an `upgrade` object (higher tiers'' caps + `pricing_url`) for callers below Pro. A 400 caused by an unknown query parameter additionally carries `allowed_params` — the complete list this endpoint accepts, read straight off the endpoint''s own schema — plus `docs`, a link to the developer reference. Individual entries in `extra.fields` may carry a did-you-mean hint in their `msg`.'
-    Topic:
-      type: object
-      required:
-      - topic
-      - relevance
-      properties:
-        topic:
-          type: string
-        relevance:
-          type: number
-          format: float
     OriginalArticle:
       type: object
       description: The article as fetched from the source. `raw_text` is intentionally NOT exposed here.
@@ -930,42 +799,100 @@ components:
           type: string
           format: date-time
           description: Last time the stored article row was touched (including internal maintenance). Informational only.
-    AlternativePerspectives:
+    Confidence:
+      type: string
+      enum:
+      - high
+      - medium
+      - low
+    EnrichedArticle:
       type: object
       properties:
-        contrarian_view:
-          type: string
-        overlooked_factors:
-          type: string
-    NewsContextEnhancement:
-      type: object
-      properties:
-        background_context:
-          type: string
-        impact_analysis:
-          type: string
-        key_entities:
+        category:
+          $ref: '#/components/schemas/NewsCategory'
+        tickers:
           type: array
           items:
-            $ref: '#/components/schemas/KeyEntity'
-        market_relevance_summary:
-          type: string
-        estimated_read_time_minutes:
+            type: string
+          description: Validated tickers the article mentions — only symbols present in `/api/symbols/` survive enrichment-time verification against the article text. Mirrors `ai_trading_insights.ticker_analysis[].ticker`.
+          example:
+          - NVDA
+        relevance_score:
           type: integer
-    AITradingInsights:
-      type: object
-      properties:
-        ticker_analysis:
-          type: array
-          items:
-            $ref: '#/components/schemas/TickerAnalysis'
-        news_trading_value:
-          $ref: '#/components/schemas/NewsTradingValue'
-        indirect_market_effects:
-          $ref: '#/components/schemas/IndirectMarketEffects'
-        alternative_perspectives:
-          $ref: '#/components/schemas/AlternativePerspectives'
+          minimum: 1
+          maximum: 10
+          description: 'How much trading value the article itself carries (rates the
+
+            article, not the company; deterministic — same article, same
+
+            score):
+
+            1–2 no trading relevance · 3–4 derivative content about
+
+            already-known events · 5–6 macro/sector datapoints, minor-but-real
+
+            company news · 7–8 real company news with a fresh catalyst ·
+
+            9–10 primary, material, newly disclosed.
+
+            SEC Form 4 rows are scored from the transaction itself (size,
+
+            buy vs. sell, 10b5-1 plan or not) rather than by the model.
+
+            '
+        ai_trading_insights:
+          $ref: '#/components/schemas/AITradingInsights'
+        news_context_enhancement:
+          $ref: '#/components/schemas/NewsContextEnhancement'
+    NewsCategory:
+      type: string
+      description: '`market_movers` is for articles whose subject IS a notable price move ("AMD up 5% today"); `sector_analysis` is genuine sector-level analysis; `insider` covers SEC Form 4 insider transactions only. SEC 8-K filings categorize by their primary item: an earnings release (Item 2.02) is `earnings`, a completed acquisition or disposition (Item 2.01) is `mergers_acquisitions`, and the remaining events (material agreements, debt, executive changes, annual-meeting results) are `corporate_actions`.'
+      enum:
+      - earnings
+      - mergers_acquisitions
+      - regulation
+      - macro_economy
+      - sector_analysis
+      - market_movers
+      - technology
+      - commodities
+      - crypto
+      - ipo
+      - geopolitics
+      - insider
+      - corporate_actions
+      - other
   responses:
+    NotFound:
+      description: No item with that identifier.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    ArchiveGated:
+      description: 'The requested `cursor` points past your plan''s news-archive horizon
+
+        (Free 30 days, Basic 90, Pro 180). The body''s `extra` carries
+
+        `reason: archive_horizon`, your `tier`, the plan''s `archive_days`,
+
+        and (below Pro) an `upgrade` block with the higher tiers'' caps and
+
+        the pricing URL. First pages and cursors within the horizon are
+
+        unaffected.
+
+        '
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Unauthorized:
+      description: Missing or invalid API key.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
     RateLimited:
       description: 'Rate limit exceeded — either the per-minute burst cap or the per-day
 
@@ -999,36 +926,6 @@ components:
           description: Epoch seconds of the next 00:00 UTC reset.
           schema:
             type: integer
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/Error'
-    Unauthorized:
-      description: Missing or invalid API key.
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/Error'
-    ArchiveGated:
-      description: 'The requested `cursor` points past your plan''s news-archive horizon
-
-        (Free 30 days, Basic 90, Pro 180). The body''s `extra` carries
-
-        `reason: archive_horizon`, your `tier`, the plan''s `archive_days`,
-
-        and (below Pro) an `upgrade` block with the higher tiers'' caps and
-
-        the pricing URL. First pages and cursors within the horizon are
-
-        unaffected.
-
-        '
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/Error'
-    NotFound:
-      description: No item with that identifier.
       content:
         application/json:
           schema:
