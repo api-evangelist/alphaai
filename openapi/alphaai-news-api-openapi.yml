@@ -489,6 +489,211 @@ paths:
       x-operation-id-source: derived
 components:
   schemas:
+    TickerAnalysis:
+      type: object
+      properties:
+        ticker:
+          type: string
+        relevance_context:
+          type: string
+        impact_analysis:
+          $ref: '#/components/schemas/ImpactAnalysis'
+    OriginalArticle:
+      type: object
+      description: The article as fetched from the source. `raw_text` is intentionally NOT exposed here.
+      required:
+      - uid
+      - title
+      - url
+      - summary
+      - time_published
+      - source
+      properties:
+        id:
+          type: integer
+        uid:
+          type: string
+          pattern: ^[a-f0-9]{16}$
+        title:
+          type: string
+        url:
+          type: string
+          format: uri
+        time_published:
+          type: string
+          format: date-time
+        authors:
+          type: array
+          items:
+            type: string
+        summary:
+          type: string
+          description: AI-generated summary safe to redistribute.
+        banner_image:
+          type: string
+          format: uri
+          nullable: true
+        source:
+          type: string
+        source_domain:
+          type: string
+        topics:
+          type: array
+          items:
+            $ref: '#/components/schemas/Topic'
+        tickers_sentiment:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        ownership_form:
+          type: string
+          nullable: true
+          enum:
+          - direct
+          - indirect
+          description: SEC Form 4 insider rows only — the holding pool the transaction touched. `null` for non-insider news. A single Form 4 can surface a `direct` and an `indirect` leg of the same plan as two separate articles (same filing URL, same date); they are distinct economic events, so SUM them rather than dedupe by URL/accession.
+        created_at:
+          type: string
+          format: date-time
+          description: When AlphaAI received the article — NOT its publish time (that is `time_published`). Use it to judge how fresh a pickup is. Do not build "what's new" polling on this field; that is what `sort=ingested` on `/api/news/` and `/api/news/insider/` is for.
+        updated_at:
+          type: string
+          format: date-time
+          description: Last time the stored article row was touched (including internal maintenance). Informational only.
+    KeyEntity:
+      type: object
+      properties:
+        name:
+          type: string
+        type:
+          type: string
+          example: company
+        description:
+          type: string
+    NewsPagination:
+      type: object
+      required:
+      - results
+      - next_cursor
+      properties:
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/RichNewsArticle'
+        next_cursor:
+          type: string
+          nullable: true
+          description: 'Opaque cursor for the next page. Pass it back as `?cursor=` with the same `sort` mode. Default (`sort=published`) feed: the next older page, `null` when the end of the feed has been reached. Delta mode (`sort=ingested`): always non-null — it is your polling position; empty `results` means caught up, keep the cursor and poll again later.'
+    IndirectMarketEffects:
+      type: object
+      properties:
+        sector_implications:
+          type: string
+        regional_market_impact:
+          type: string
+        global_market_relevance:
+          type: string
+    NewsTradingValue:
+      type: object
+      properties:
+        actionability_score:
+          $ref: '#/components/schemas/Actionability'
+        information_novelty:
+          type: integer
+          minimum: 0
+          maximum: 10
+          description: 'How much NEW information the article carries (1–10), kept separate from relevance: a mega-cap post-earnings recap is high relevance but low novelty. 0 on rows enriched before the field existed.'
+        timing_relevance:
+          type: string
+        market_sentiment_alignment:
+          type: string
+        estimated_read_time:
+          type: string
+    Error:
+      type: object
+      properties:
+        message:
+          type: string
+        error:
+          type: string
+        detail:
+          type: string
+        extra:
+          type: object
+          description: 'Machine-readable context on capped responses: the 429 carries `tier`, `limit_per_minute`, `limit_per_day`, `retry_after_seconds`; the archive 403 carries `reason: archive_horizon`, `tier`, `archive_days`. Both include an `upgrade` object (higher tiers'' caps + `pricing_url`) for callers below Pro. A 400 caused by an unknown query parameter additionally carries `allowed_params` — the complete list this endpoint accepts, read straight off the endpoint''s own schema — plus `docs`, a link to the developer reference. Individual entries in `extra.fields` may carry a did-you-mean hint in their `msg`.'
+    AlternativePerspectives:
+      type: object
+      properties:
+        contrarian_view:
+          type: string
+        overlooked_factors:
+          type: string
+    Actionability:
+      type: string
+      enum:
+      - high
+      - medium
+      - low
+      - negligible
+    Confidence:
+      type: string
+      enum:
+      - high
+      - medium
+      - low
+    Sentiment:
+      type: string
+      enum:
+      - positive
+      - neutral
+      - negative
+    Topic:
+      type: object
+      required:
+      - topic
+      - relevance
+      properties:
+        topic:
+          type: string
+        relevance:
+          type: number
+          format: float
+    RichNewsArticle:
+      type: object
+      required:
+      - original
+      - enrichment
+      properties:
+        original:
+          $ref: '#/components/schemas/OriginalArticle'
+        enrichment:
+          $ref: '#/components/schemas/EnrichedArticle'
+        story_id:
+          type: string
+          nullable: true
+          description: Populated whenever the response is story-collapsed — `?collapse=story` on `/api/news/`, and always on `/api/news/trending/`. The `uid` of this story's representative article — equal to this item's own `original.uid`, and resolvable via `/api/news/{uid}/`. `null` in the default (uncollapsed) feed.
+          example: 788e477c66f3849b
+        sources_count:
+          type: integer
+          nullable: true
+          description: Story-collapsed responses only. Number of distinct outlets (source domains) covering this story; the same outlet running it more than once counts once. Most stories are carried by a single outlet, so this is usually 1. Treat a value above 1 as the signal, not the number itself. May exceed the length of `sources`, which is capped at 10. `null` in the default feed.
+          example: 3
+        sources:
+          type: array
+          nullable: true
+          items:
+            type: string
+          description: Story-collapsed responses only. Distinct source domains covering this story, in first-appearance order, capped at 10. `null` in the default feed.
+          example:
+          - reuters.com
+          - apnews.com
+          - bloomberg.com
+        insider:
+          nullable: true
+          allOf:
+          - $ref: '#/components/schemas/InsiderEvent'
+          description: '`/api/news/insider/` only — the structured SEC Form 4 event block. `null` on every other endpoint and on rows without paired transaction data.'
     NewsContextEnhancement:
       type: object
       properties:
@@ -504,36 +709,45 @@ components:
           type: string
         estimated_read_time_minutes:
           type: integer
-    AlternativePerspectives:
+    EnrichedArticle:
       type: object
       properties:
-        contrarian_view:
-          type: string
-        overlooked_factors:
-          type: string
-    AITradingInsights:
-      type: object
-      properties:
-        ticker_analysis:
+        category:
+          $ref: '#/components/schemas/NewsCategory'
+        tickers:
           type: array
           items:
-            $ref: '#/components/schemas/TickerAnalysis'
-        news_trading_value:
-          $ref: '#/components/schemas/NewsTradingValue'
-        indirect_market_effects:
-          $ref: '#/components/schemas/IndirectMarketEffects'
-        alternative_perspectives:
-          $ref: '#/components/schemas/AlternativePerspectives'
-    KeyEntity:
-      type: object
-      properties:
-        name:
-          type: string
-        type:
-          type: string
-          example: company
-        description:
-          type: string
+            type: string
+          description: Validated tickers the article mentions — only symbols present in `/api/symbols/` survive enrichment-time verification against the article text. Mirrors `ai_trading_insights.ticker_analysis[].ticker`.
+          example:
+          - NVDA
+        relevance_score:
+          type: integer
+          minimum: 1
+          maximum: 10
+          description: 'How much trading value the article itself carries (rates the
+
+            article, not the company; deterministic — same article, same
+
+            score):
+
+            1–2 no trading relevance · 3–4 derivative content about
+
+            already-known events · 5–6 macro/sector datapoints, minor-but-real
+
+            company news · 7–8 real company news with a fresh catalyst ·
+
+            9–10 primary, material, newly disclosed.
+
+            SEC Form 4 rows are scored from the transaction itself (size,
+
+            buy vs. sell, 10b5-1 plan or not) rather than by the model.
+
+            '
+        ai_trading_insights:
+          $ref: '#/components/schemas/AITradingInsights'
+        news_context_enhancement:
+          $ref: '#/components/schemas/NewsContextEnhancement'
     InsiderEvent:
       type: object
       description: 'Structured SEC Form 4 event: the aggregate of the news row''s whole transaction group (one row fronts a filing''s non-derivative trades of one type and holding form, so a 10b5-1 ladder is ONE event). `shares` and `total_value_usd` are group sums; `avg_price_usd` is the value-weighted average over priced tranches. Money and share fields are decimal STRINGS to preserve precision.'
@@ -604,96 +818,32 @@ components:
         late_filing:
           type: boolean
           description: 'The filing missed the SEC''s two-business-day deadline (Rule 16a-3(g)). Computed on Eastern dates, since EDGAR accepts filings until ~22:00 ET, and with one weekday of slack so a trade in a holiday week is not flagged: true when more than three weekday-days separate `transaction_date` from the filing. About 3% of events carry it; the long tail is catch-up filings covering trades from years earlier.'
-    Topic:
-      type: object
-      required:
-      - topic
-      - relevance
-      properties:
-        topic:
-          type: string
-        relevance:
-          type: number
-          format: float
-    NewsTradingValue:
+    ImpactAnalysis:
       type: object
       properties:
-        actionability_score:
-          $ref: '#/components/schemas/Actionability'
-        information_novelty:
-          type: integer
-          minimum: 0
-          maximum: 10
-          description: 'How much NEW information the article carries (1–10), kept separate from relevance: a mega-cap post-earnings recap is high relevance but low novelty. 0 on rows enriched before the field existed.'
-        timing_relevance:
-          type: string
-        market_sentiment_alignment:
-          type: string
-        estimated_read_time:
-          type: string
-    OriginalArticle:
-      type: object
-      description: The article as fetched from the source. `raw_text` is intentionally NOT exposed here.
-      required:
-      - uid
-      - title
-      - url
-      - summary
-      - time_published
-      - source
-      properties:
-        id:
-          type: integer
-        uid:
-          type: string
-          pattern: ^[a-f0-9]{16}$
-        title:
-          type: string
-        url:
-          type: string
-          format: uri
-        time_published:
-          type: string
-          format: date-time
-        authors:
-          type: array
-          items:
-            type: string
         summary:
           type: string
-          description: AI-generated summary safe to redistribute.
-        banner_image:
+        sentiment:
+          $ref: '#/components/schemas/Sentiment'
+        price_impact_prediction:
           type: string
-          format: uri
-          nullable: true
-        source:
+        confidence:
+          $ref: '#/components/schemas/Confidence'
+        reasoning:
           type: string
-        source_domain:
-          type: string
-        topics:
+    AITradingInsights:
+      type: object
+      properties:
+        ticker_analysis:
           type: array
           items:
-            $ref: '#/components/schemas/Topic'
-        tickers_sentiment:
-          type: array
-          items:
-            type: object
-            additionalProperties: true
-        ownership_form:
-          type: string
-          nullable: true
-          enum:
-          - direct
-          - indirect
-          description: SEC Form 4 insider rows only — the holding pool the transaction touched. `null` for non-insider news. A single Form 4 can surface a `direct` and an `indirect` leg of the same plan as two separate articles (same filing URL, same date); they are distinct economic events, so SUM them rather than dedupe by URL/accession.
-        created_at:
-          type: string
-          format: date-time
-          description: When AlphaAI received the article — NOT its publish time (that is `time_published`). Use it to judge how fresh a pickup is. Do not build "what's new" polling on this field; that is what `sort=ingested` on `/api/news/` and `/api/news/insider/` is for.
-        updated_at:
-          type: string
-          format: date-time
-          description: Last time the stored article row was touched (including internal maintenance). Informational only.
+            $ref: '#/components/schemas/TickerAnalysis'
+        news_trading_value:
+          $ref: '#/components/schemas/NewsTradingValue'
+        indirect_market_effects:
+          $ref: '#/components/schemas/IndirectMarketEffects'
+        alternative_perspectives:
+          $ref: '#/components/schemas/AlternativePerspectives'
     NewsCategory:
       type: string
       description: '`market_movers` is for articles whose subject IS a notable price move ("AMD up 5% today"); `sector_analysis` is genuine sector-level analysis; `insider` covers SEC Form 4 insider transactions only. SEC 8-K filings categorize by their primary item: an earnings release (Item 2.02) is `earnings`, a completed acquisition or disposition (Item 2.01) is `mergers_acquisitions`, and the remaining events (material agreements, debt, executive changes, annual-meeting results) are `corporate_actions`.'
@@ -712,159 +862,21 @@ components:
       - insider
       - corporate_actions
       - other
-    Error:
-      type: object
-      properties:
-        message:
-          type: string
-        error:
-          type: string
-        detail:
-          type: string
-        extra:
-          type: object
-          description: 'Machine-readable context on capped responses: the 429 carries `tier`, `limit_per_minute`, `limit_per_day`, `retry_after_seconds`; the archive 403 carries `reason: archive_horizon`, `tier`, `archive_days`. Both include an `upgrade` object (higher tiers'' caps + `pricing_url`) for callers below Pro. A 400 caused by an unknown query parameter additionally carries `allowed_params` — the complete list this endpoint accepts, read straight off the endpoint''s own schema — plus `docs`, a link to the developer reference. Individual entries in `extra.fields` may carry a did-you-mean hint in their `msg`.'
-    RichNewsArticle:
-      type: object
-      required:
-      - original
-      - enrichment
-      properties:
-        original:
-          $ref: '#/components/schemas/OriginalArticle'
-        enrichment:
-          $ref: '#/components/schemas/EnrichedArticle'
-        story_id:
-          type: string
-          nullable: true
-          description: Populated whenever the response is story-collapsed — `?collapse=story` on `/api/news/`, and always on `/api/news/trending/`. The `uid` of this story's representative article — equal to this item's own `original.uid`, and resolvable via `/api/news/{uid}/`. `null` in the default (uncollapsed) feed.
-          example: 788e477c66f3849b
-        sources_count:
-          type: integer
-          nullable: true
-          description: Story-collapsed responses only. Number of distinct outlets (source domains) covering this story; the same outlet running it more than once counts once. Most stories are carried by a single outlet, so this is usually 1. Treat a value above 1 as the signal, not the number itself. May exceed the length of `sources`, which is capped at 10. `null` in the default feed.
-          example: 3
-        sources:
-          type: array
-          nullable: true
-          items:
-            type: string
-          description: Story-collapsed responses only. Distinct source domains covering this story, in first-appearance order, capped at 10. `null` in the default feed.
-          example:
-          - reuters.com
-          - apnews.com
-          - bloomberg.com
-        insider:
-          nullable: true
-          allOf:
-          - $ref: '#/components/schemas/InsiderEvent'
-          description: '`/api/news/insider/` only — the structured SEC Form 4 event block. `null` on every other endpoint and on rows without paired transaction data.'
-    Confidence:
-      type: string
-      enum:
-      - high
-      - medium
-      - low
-    Actionability:
-      type: string
-      enum:
-      - high
-      - medium
-      - low
-      - negligible
-    EnrichedArticle:
-      type: object
-      properties:
-        category:
-          $ref: '#/components/schemas/NewsCategory'
-        tickers:
-          type: array
-          items:
-            type: string
-          description: Validated tickers the article mentions — only symbols present in `/api/symbols/` survive enrichment-time verification against the article text. Mirrors `ai_trading_insights.ticker_analysis[].ticker`.
-          example:
-          - NVDA
-        relevance_score:
-          type: integer
-          minimum: 1
-          maximum: 10
-          description: 'How much trading value the article itself carries (rates the
-
-            article, not the company; deterministic — same article, same
-
-            score):
-
-            1–2 no trading relevance · 3–4 derivative content about
-
-            already-known events · 5–6 macro/sector datapoints, minor-but-real
-
-            company news · 7–8 real company news with a fresh catalyst ·
-
-            9–10 primary, material, newly disclosed.
-
-            SEC Form 4 rows are scored from the transaction itself (size,
-
-            buy vs. sell, 10b5-1 plan or not) rather than by the model.
-
-            '
-        ai_trading_insights:
-          $ref: '#/components/schemas/AITradingInsights'
-        news_context_enhancement:
-          $ref: '#/components/schemas/NewsContextEnhancement'
-    IndirectMarketEffects:
-      type: object
-      properties:
-        sector_implications:
-          type: string
-        regional_market_impact:
-          type: string
-        global_market_relevance:
-          type: string
-    NewsPagination:
-      type: object
-      required:
-      - results
-      - next_cursor
-      properties:
-        results:
-          type: array
-          items:
-            $ref: '#/components/schemas/RichNewsArticle'
-        next_cursor:
-          type: string
-          nullable: true
-          description: 'Opaque cursor for the next page. Pass it back as `?cursor=` with the same `sort` mode. Default (`sort=published`) feed: the next older page, `null` when the end of the feed has been reached. Delta mode (`sort=ingested`): always non-null — it is your polling position; empty `results` means caught up, keep the cursor and poll again later.'
-    TickerAnalysis:
-      type: object
-      properties:
-        ticker:
-          type: string
-        relevance_context:
-          type: string
-        impact_analysis:
-          $ref: '#/components/schemas/ImpactAnalysis'
-    ImpactAnalysis:
-      type: object
-      properties:
-        summary:
-          type: string
-        sentiment:
-          $ref: '#/components/schemas/Sentiment'
-        price_impact_prediction:
-          type: string
-        confidence:
-          $ref: '#/components/schemas/Confidence'
-        reasoning:
-          type: string
-    Sentiment:
-      type: string
-      enum:
-      - positive
-      - neutral
-      - negative
   responses:
-    NotFound:
-      description: No item with that identifier.
+    ArchiveGated:
+      description: 'The requested `cursor` points past your plan''s news-archive horizon
+
+        (Free 30 days, Basic 90, Pro 180). The body''s `extra` carries
+
+        `reason: archive_horizon`, your `tier`, the plan''s `archive_days`,
+
+        and (below Pro) an `upgrade` block with the higher tiers'' caps and
+
+        the pricing URL. First pages and cursors within the horizon are
+
+        unaffected.
+
+        '
       content:
         application/json:
           schema:
@@ -912,20 +924,8 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/Error'
-    ArchiveGated:
-      description: 'The requested `cursor` points past your plan''s news-archive horizon
-
-        (Free 30 days, Basic 90, Pro 180). The body''s `extra` carries
-
-        `reason: archive_horizon`, your `tier`, the plan''s `archive_days`,
-
-        and (below Pro) an `upgrade` block with the higher tiers'' caps and
-
-        the pricing URL. First pages and cursors within the horizon are
-
-        unaffected.
-
-        '
+    NotFound:
+      description: No item with that identifier.
       content:
         application/json:
           schema:

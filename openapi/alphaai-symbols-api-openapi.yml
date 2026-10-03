@@ -351,6 +351,26 @@ paths:
       x-operation-id-source: derived
 components:
   schemas:
+    TopInsider:
+      type: object
+      required:
+      - name
+      - title
+      - transaction_count
+      properties:
+        name:
+          type: string
+          example: STEVENS MARK A
+        title:
+          type: string
+          description: Officer title from the filing; empty when the filer reports as a director only.
+        transaction_count:
+          type: integer
+        net_value:
+          type: string
+          nullable: true
+          example: '-221102600.00'
+          description: Buys minus sells in USD over the window, as a decimal string.
     TickerInsiderSummary:
       type: object
       required:
@@ -392,25 +412,51 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/TopInsider'
-    InsiderTradesSummary:
+    DirectorySymbol:
       type: object
       required:
-      - last_3m
-      - last_12m
-      - all_time
-      - top_insiders
+      - ticker
+      - name
+      - news_count
       properties:
-        last_3m:
-          $ref: '#/components/schemas/InsiderTradesWindow'
-        last_12m:
-          $ref: '#/components/schemas/InsiderTradesWindow'
-        all_time:
-          $ref: '#/components/schemas/InsiderTradesWindow'
-        top_insiders:
-          type: array
-          items:
-            $ref: '#/components/schemas/InsiderTradesTopInsider'
-          description: Most active reporters of the last 12 months, at most five.
+        ticker:
+          type: string
+          example: NVDA
+        name:
+          type: string
+          example: NVIDIA Corp
+        news_count:
+          type: integer
+          description: Above-floor enriched-news rows mentioning the ticker in the window.
+    DailySentimentBucket:
+      type: object
+      required:
+      - day
+      - bullish
+      - neutral
+      - bearish
+      properties:
+        day:
+          type: string
+          format: date
+        bullish:
+          type: integer
+        neutral:
+          type: integer
+        bearish:
+          type: integer
+    SymbolPeer:
+      type: object
+      required:
+      - ticker
+      - name
+      properties:
+        ticker:
+          type: string
+          example: AMD
+        name:
+          type: string
+          example: Advanced Micro Devices Inc
     InsiderTradesMonthBucket:
       type: object
       required:
@@ -435,73 +481,65 @@ components:
         sell_value_usd:
           type: string
           example: '48200000.00'
-    DailySentimentBucket:
+    Error:
+      type: object
+      properties:
+        message:
+          type: string
+        error:
+          type: string
+        detail:
+          type: string
+        extra:
+          type: object
+          description: 'Machine-readable context on capped responses: the 429 carries `tier`, `limit_per_minute`, `limit_per_day`, `retry_after_seconds`; the archive 403 carries `reason: archive_horizon`, `tier`, `archive_days`. Both include an `upgrade` object (higher tiers'' caps + `pricing_url`) for callers below Pro. A 400 caused by an unknown query parameter additionally carries `allowed_params` — the complete list this endpoint accepts, read straight off the endpoint''s own schema — plus `docs`, a link to the developer reference. Individual entries in `extra.fields` may carry a did-you-mean hint in their `msg`.'
+    SectorSymbols:
       type: object
       required:
-      - day
+      - sector
+      - slug
+      - count
+      - symbols
+      properties:
+        sector:
+          type: string
+        slug:
+          type: string
+        count:
+          type: integer
+        symbols:
+          type: array
+          items:
+            $ref: '#/components/schemas/DirectorySymbol'
+    TickerSentimentSummary:
+      type: object
+      required:
+      - ticker
+      - days
+      - total
       - bullish
       - neutral
       - bearish
+      - daily
       properties:
-        day:
+        ticker:
           type: string
-          format: date
+        days:
+          type: integer
+          example: 7
+        total:
+          type: integer
+          description: Articles with a sentiment call in the window.
         bullish:
           type: integer
         neutral:
           type: integer
         bearish:
           type: integer
-    InsiderTradesTopInsider:
-      type: object
-      required:
-      - name
-      - title
-      - event_count
-      properties:
-        name:
-          type: string
-          example: Intrator Michael N
-        title:
-          type: string
-          description: Officer title from the filing; empty when the filer reports as a director only.
-        event_count:
-          type: integer
-        net_value_usd:
-          type: string
-          nullable: true
-          example: '-505000000.00'
-          description: Buys minus sells in USD over the last 12 months, as a decimal string; positive means a net buyer.
-    SymbolDirectory:
-      type: object
-      required:
-      - most_active
-      - sectors
-      properties:
-        most_active:
+        daily:
           type: array
           items:
-            $ref: '#/components/schemas/DirectorySymbol'
-        sectors:
-          type: array
-          items:
-            $ref: '#/components/schemas/DirectorySector'
-    DirectorySymbol:
-      type: object
-      required:
-      - ticker
-      - name
-      - news_count
-      properties:
-        ticker:
-          type: string
-          example: NVDA
-        name:
-          type: string
-          example: NVIDIA Corp
-        news_count:
-          type: integer
-          description: Above-floor enriched-news rows mentioning the ticker in the window.
+            $ref: '#/components/schemas/DailySentimentBucket'
     InsiderTradeEvent:
       type: object
       description: 'One Form 4 economic event, same folding as the feed''s `InsiderEvent` (a filing''s whole tranche group: `shares` and `total_value_usd` are group sums, `avg_price_usd` is value-weighted over priced tranches, money and share fields are decimal STRINGS). Differences from the feed block: `side` here is only `buy` or `sell` (D counts as sell, see the endpoint description), and each event adds its stake impact, tranche count and the link to our enriched article.'
@@ -608,57 +646,20 @@ components:
         has_article:
           type: boolean
           description: Whether the alphai.io article page for `news_uid` exists. Events ingested by the historical backfill have no enriched article; render those without a link.
-    TopInsider:
+    SymbolDirectory:
       type: object
       required:
-      - name
-      - title
-      - transaction_count
+      - most_active
+      - sectors
       properties:
-        name:
-          type: string
-          example: STEVENS MARK A
-        title:
-          type: string
-          description: Officer title from the filing; empty when the filer reports as a director only.
-        transaction_count:
-          type: integer
-        net_value:
-          type: string
-          nullable: true
-          example: '-221102600.00'
-          description: Buys minus sells in USD over the window, as a decimal string.
-    InsiderTradesWindow:
-      type: object
-      description: Event-level aggregates over one rolling window. Counts here are grouped EVENTS, not tranches, so they run lower than the transaction counts of `/api/symbols/{ticker}/insider-summary/`.
-      required:
-      - buy_count
-      - sell_count
-      - unique_insiders
-      - pct_10b5_1
-      properties:
-        buy_count:
-          type: integer
-        sell_count:
-          type: integer
-        buy_value_usd:
-          type: string
-          nullable: true
-          example: '1240000.00'
-          description: Decimal string in USD; null when the window has no priced buys.
-        sell_value_usd:
-          type: string
-          nullable: true
-          example: '224580213.05'
-          description: Decimal string in USD; null when the window has no priced sells.
-        unique_insiders:
-          type: integer
-          description: Distinct reporting owners in the window.
-        pct_10b5_1:
-          type: integer
-          minimum: 0
-          maximum: 100
-          description: Share of the window's events executed under a pre-arranged 10b5-1 plan, in percent.
+        most_active:
+          type: array
+          items:
+            $ref: '#/components/schemas/DirectorySymbol'
+        sectors:
+          type: array
+          items:
+            $ref: '#/components/schemas/DirectorySector'
     TickerInsiderTrades:
       type: object
       required:
@@ -705,74 +706,6 @@ components:
           type: string
           nullable: true
           description: Opaque cursor for the next (older) page; `null` at the end of the recorded history.
-    DirectorySector:
-      type: object
-      required:
-      - sector
-      - slug
-      - count
-      - top
-      properties:
-        sector:
-          type: string
-          example: Technology
-        slug:
-          type: string
-          example: technology
-        count:
-          type: integer
-          description: Total active symbols in the sector.
-        top:
-          type: array
-          items:
-            $ref: '#/components/schemas/DirectorySymbol'
-    Error:
-      type: object
-      properties:
-        message:
-          type: string
-        error:
-          type: string
-        detail:
-          type: string
-        extra:
-          type: object
-          description: 'Machine-readable context on capped responses: the 429 carries `tier`, `limit_per_minute`, `limit_per_day`, `retry_after_seconds`; the archive 403 carries `reason: archive_horizon`, `tier`, `archive_days`. Both include an `upgrade` object (higher tiers'' caps + `pricing_url`) for callers below Pro. A 400 caused by an unknown query parameter additionally carries `allowed_params` — the complete list this endpoint accepts, read straight off the endpoint''s own schema — plus `docs`, a link to the developer reference. Individual entries in `extra.fields` may carry a did-you-mean hint in their `msg`.'
-    SymbolPeer:
-      type: object
-      required:
-      - ticker
-      - name
-      properties:
-        ticker:
-          type: string
-          example: AMD
-        name:
-          type: string
-          example: Advanced Micro Devices Inc
-    InsiderTradesWeekBucket:
-      type: object
-      required:
-      - week_start
-      - buy_count
-      - sell_count
-      - buy_value_usd
-      - sell_value_usd
-      properties:
-        week_start:
-          type: string
-          format: date
-          description: Monday of the ISO week.
-        buy_count:
-          type: integer
-        sell_count:
-          type: integer
-        buy_value_usd:
-          type: string
-          example: '0'
-        sell_value_usd:
-          type: string
-          example: '9886021.65'
     SymbolPeers:
       type: object
       required:
@@ -798,6 +731,60 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/SymbolPeer'
+    InsiderTradesWeekBucket:
+      type: object
+      required:
+      - week_start
+      - buy_count
+      - sell_count
+      - buy_value_usd
+      - sell_value_usd
+      properties:
+        week_start:
+          type: string
+          format: date
+          description: Monday of the ISO week.
+        buy_count:
+          type: integer
+        sell_count:
+          type: integer
+        buy_value_usd:
+          type: string
+          example: '0'
+        sell_value_usd:
+          type: string
+          example: '9886021.65'
+    InsiderTradesWindow:
+      type: object
+      description: Event-level aggregates over one rolling window. Counts here are grouped EVENTS, not tranches, so they run lower than the transaction counts of `/api/symbols/{ticker}/insider-summary/`.
+      required:
+      - buy_count
+      - sell_count
+      - unique_insiders
+      - pct_10b5_1
+      properties:
+        buy_count:
+          type: integer
+        sell_count:
+          type: integer
+        buy_value_usd:
+          type: string
+          nullable: true
+          example: '1240000.00'
+          description: Decimal string in USD; null when the window has no priced buys.
+        sell_value_usd:
+          type: string
+          nullable: true
+          example: '224580213.05'
+          description: Decimal string in USD; null when the window has no priced sells.
+        unique_insiders:
+          type: integer
+          description: Distinct reporting owners in the window.
+        pct_10b5_1:
+          type: integer
+          minimum: 0
+          maximum: 100
+          description: Share of the window's events executed under a pre-arranged 10b5-1 plan, in percent.
     Symbol:
       type: object
       required:
@@ -853,60 +840,67 @@ components:
         renamed_to:
           type: string
           description: Set on a delisted symbol when the company continues under a new ticker (for example SATS became ECHO). Empty otherwise.
-    SectorSymbols:
+    InsiderTradesSummary:
+      type: object
+      required:
+      - last_3m
+      - last_12m
+      - all_time
+      - top_insiders
+      properties:
+        last_3m:
+          $ref: '#/components/schemas/InsiderTradesWindow'
+        last_12m:
+          $ref: '#/components/schemas/InsiderTradesWindow'
+        all_time:
+          $ref: '#/components/schemas/InsiderTradesWindow'
+        top_insiders:
+          type: array
+          items:
+            $ref: '#/components/schemas/InsiderTradesTopInsider'
+          description: Most active reporters of the last 12 months, at most five.
+    InsiderTradesTopInsider:
+      type: object
+      required:
+      - name
+      - title
+      - event_count
+      properties:
+        name:
+          type: string
+          example: Intrator Michael N
+        title:
+          type: string
+          description: Officer title from the filing; empty when the filer reports as a director only.
+        event_count:
+          type: integer
+        net_value_usd:
+          type: string
+          nullable: true
+          example: '-505000000.00'
+          description: Buys minus sells in USD over the last 12 months, as a decimal string; positive means a net buyer.
+    DirectorySector:
       type: object
       required:
       - sector
       - slug
       - count
-      - symbols
+      - top
       properties:
         sector:
           type: string
+          example: Technology
         slug:
           type: string
+          example: technology
         count:
           type: integer
-        symbols:
+          description: Total active symbols in the sector.
+        top:
           type: array
           items:
             $ref: '#/components/schemas/DirectorySymbol'
-    TickerSentimentSummary:
-      type: object
-      required:
-      - ticker
-      - days
-      - total
-      - bullish
-      - neutral
-      - bearish
-      - daily
-      properties:
-        ticker:
-          type: string
-        days:
-          type: integer
-          example: 7
-        total:
-          type: integer
-          description: Articles with a sentiment call in the window.
-        bullish:
-          type: integer
-        neutral:
-          type: integer
-        bearish:
-          type: integer
-        daily:
-          type: array
-          items:
-            $ref: '#/components/schemas/DailySentimentBucket'
   responses:
-    NotFound:
-      description: No item with that identifier.
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/Error'
     Unauthorized:
       description: Missing or invalid API key.
       content:
@@ -946,6 +940,12 @@ components:
           description: Epoch seconds of the next 00:00 UTC reset.
           schema:
             type: integer
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      description: No item with that identifier.
       content:
         application/json:
           schema:

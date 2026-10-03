@@ -112,6 +112,50 @@ paths:
       operationId: getApiCalendar
       x-operation-id-source: derived
 components:
+  responses:
+    Unauthorized:
+      description: Missing or invalid API key.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    RateLimited:
+      description: 'Rate limit exceeded — either the per-minute burst cap or the per-day
+
+        volume cap. The `Retry-After` header tells you how long to wait (a burst
+
+        block is short, ≤60s; a day-cap block is capped at 3600s — the true reset
+
+        is `X-RateLimit-Reset`). The `X-RateLimit-*` trio shows the daily volume
+
+        budget. The body''s `extra` names your tier, its `limit_per_minute` /
+
+        `limit_per_day`, `retry_after_seconds`, and — below Pro — an `upgrade`
+
+        block with the higher tiers'' caps and the pricing URL.
+
+        '
+      headers:
+        Retry-After:
+          description: Seconds to wait before retrying (burst ≤60s; day cap ≤3600s).
+          schema:
+            type: integer
+        X-RateLimit-Limit:
+          description: The tier's per-day request volume.
+          schema:
+            type: integer
+        X-RateLimit-Remaining:
+          description: Requests left in today's volume budget.
+          schema:
+            type: integer
+        X-RateLimit-Reset:
+          description: Epoch seconds of the next 00:00 UTC reset.
+          schema:
+            type: integer
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
   schemas:
     CalendarEvents:
       type: object
@@ -225,50 +269,6 @@ components:
       - insider
       - corporate_actions
       - other
-  responses:
-    RateLimited:
-      description: 'Rate limit exceeded — either the per-minute burst cap or the per-day
-
-        volume cap. The `Retry-After` header tells you how long to wait (a burst
-
-        block is short, ≤60s; a day-cap block is capped at 3600s — the true reset
-
-        is `X-RateLimit-Reset`). The `X-RateLimit-*` trio shows the daily volume
-
-        budget. The body''s `extra` names your tier, its `limit_per_minute` /
-
-        `limit_per_day`, `retry_after_seconds`, and — below Pro — an `upgrade`
-
-        block with the higher tiers'' caps and the pricing URL.
-
-        '
-      headers:
-        Retry-After:
-          description: Seconds to wait before retrying (burst ≤60s; day cap ≤3600s).
-          schema:
-            type: integer
-        X-RateLimit-Limit:
-          description: The tier's per-day request volume.
-          schema:
-            type: integer
-        X-RateLimit-Remaining:
-          description: Requests left in today's volume budget.
-          schema:
-            type: integer
-        X-RateLimit-Reset:
-          description: Epoch seconds of the next 00:00 UTC reset.
-          schema:
-            type: integer
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/Error'
-    Unauthorized:
-      description: Missing or invalid API key.
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/Error'
   securitySchemes:
     apiKey:
       type: http
