@@ -1,0 +1,392 @@
+openapi: 3.2.0
+info:
+  title: AlphAI REST Coverage API
+  version: 1.52.0
+  description: 'Public REST API for AlphAI''s relevance-scored, ticker-linked financial news. All endpoints accept `Authorization: Bearer ak_live_…` (issued from your
+
+    `/account/api-keys`). Authenticated traffic is metered per account with two
+
+    layers — a per-minute burst cap and a per-day volume cap (Free 20/min +
+
+    100/day, Basic 60/min + 10,000/day, Pro 150/min + 100,000/day); a request
+
+    passes only if both are under budget. The Free tier is for evaluation /
+
+    personal non-commercial use; Basic is licensed for internal commercial use;
+
+    Pro adds redistribution of the enriched feed. Send all API traffic to
+
+    `api.alphai.io`; a key is required on every request. The API is server-side only. It sends no CORS headers, so a cross-origin
+
+    call from a browser page fails at the preflight: the `OPTIONS` request is
+
+    answered with `403` at the edge and never reaches the API. Keep the key on
+
+    your server and expose your own route to the browser; a key embedded in
+
+    page code is readable by every visitor and spends your quota. Every keyed response carries `X-RateLimit-Limit`, `X-RateLimit-Remaining`
+
+    and `X-RateLimit-Reset`; these report the per-day volume layer (Reset =
+
+    epoch seconds of the next 00:00 UTC reset) so you can watch your daily budget
+
+    without provoking a 429. A per-minute burst surfaces only as a 429 with a
+
+    short `Retry-After`. A 429 body also names your tier, its caps and an
+
+    `upgrade` block. A request rejected with 429 does not itself spend quota. The headers reflect origin processing, so a response served from a shared
+
+    cache may omit them. On the MCP server (`mcp.alphai.io`) the same two layers meter **tool calls
+
+    only** — the connect handshake (`initialize`, `tools/list`, notifications,
+
+    keepalives, the SSE stream) is protocol traffic and does not consume your
+
+    quota. It carries a separate, far larger ceiling that exists only to stop a
+
+    client reconnecting in a loop; hitting it returns a 429 whose body reports
+
+    `"window": "transport"`, which means your client is reconnecting too often,
+
+    not that you are out of quota. MCP news tools accept `detail="compact"` for headline triage and polling:
+
+    `alphai_news_search`, `alphai_ticker_news`, `alphai_insider_news`,
+
+    `alphai_trending`, `alphai_actionable_now`, `alphai_macro` and
+
+    `alphai_pair_analysis`. Compact items keep identity, source, publication
+
+    and ingest times, tickers, category, relevance_score, top-level
+
+    actionability and information_novelty, story fields, ownership_form and
+
+    search_match. Summary, analysis, images and SEC detail blocks are omitted;
+
+    fetch `alphai_article(uid)` for those details. `detail="full"` is the
+
+    default and preserves the existing format, including the condensed recent
+
+    lists on pair_analysis. Selection, order, cursors, query interpretation
+
+    and macro releases are unchanged, so detail can change between pages. This parameter belongs to MCP tools only; REST parameters are unchanged. Interactive MCP clients use a separate OAuth approval flow. Check the
+
+    callback host or app scheme and full callback address before approving;
+
+    app names are self-declared, not verified by AlphAI. MCP access includes
+
+    news, market data and the saved watchlist, plus creating, changing and
+
+    disabling the user''s own alerts on Basic or Pro (including after an
+
+    upgrade). The OAuth scope `tools.read` is not a read-only restriction. Registered callbacks can be reviewed in Account → MCP connections. That account management surface requires website login, not an API key. Disconnect blocks all existing MCP OAuth access and refresh tokens for that
+
+    app connection, including its other sessions; work already in progress may
+
+    finish. Other connections and API keys are unaffected. Revoking either token
+
+    type through the separate MCP host''s `/oauth/revoke` has the same effect. Serialize refresh requests and save each replacement token: reuse ends the
+
+    connection.'
+  contact:
+    name: alphai support
+    email: support@alphai.io
+    url: https://alphai.io/contact
+  license:
+    name: Proprietary
+servers:
+- url: https://api.alphai.io
+  description: Production (API host — key required)
+security:
+- apiKey: []
+tags:
+- name: Coverage
+  description: What each data source holds — from when, how dense, with which caveats.
+paths:
+  /api/coverage/:
+    get:
+      tags:
+      - Coverage
+      summary: Coverage passport — what each data source holds, from when, with which caveats
+      description: 'One object per data source: `publisher_news` (the GDELT stream, RSS
+
+        feeds and directly parsed publisher pages), `sec_form4`, `sec_form8k`, `sec_form6k`,
+
+        `earnings_reads`, `earnings_schedule` and `economic_calendar`. Each
+
+        carries its earliest and latest row, the last ingest time, the row
+
+        count in the source''s own unit, the collector''s cadence, a history
+
+        note saying where the history is thin, the known limits, and the
+
+        per-plan archive horizon. Read this before backtesting or promising
+
+        coverage downstream: `first_row_at` is the earliest row we hold, NOT
+
+        the start of dense coverage — `history_note` says which months are
+
+        thin (publisher news densified in June 2026; Form 4 before May 2026
+
+        is an unenriched replay; 8-K history starts June 2026; 6-K and
+
+        earnings reads start 2026-07-28).
+
+
+        The passport is computed once a day (03:50 UTC) and served from a
+
+        cache: `as_of` is when the counts were taken and `generated_at` when
+
+        the payload was assembled, so both describe the computation, never
+
+        the response. Rows may be up to a day newer than `last_row_at`. On a
+
+        cold cache the first caller computes it (a few seconds); a concurrent
+
+        caller gets `503` with `Retry-After` instead of a second scan.
+
+
+        `stale` is an honest flag, not an alert: true when the newest ingest
+
+        is older than `stale_after_seconds` — six poll cycles for the
+
+        collectors, three days for SEC filings (EDGAR takes no filings on
+
+        weekends), ten days for earnings reads — or, for the economic
+
+        calendar (`stale_after_seconds` null), when no future occurrence is
+
+        held. `publisher_news` additionally reports each discovery channel
+
+        (`gkg`, `rss`) with its own last ingest and flag.
+
+        `research_only` restates that everything described here is
+
+        AI-generated financial information for research, not investment
+
+        advice.'
+      responses:
+        '200':
+          description: The passport, one object per source in a fixed order.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Coverage'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          description: 'The passport is not cached and another request is computing it. `Retry-After` (30 s) is when the fresh payload will be there; the body''s `extra` carries `reason: coverage_unavailable` and `retry_after_seconds`.'
+          headers:
+            Retry-After:
+              description: Seconds to wait before retrying.
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+      operationId: getApiCoverage
+      x-operation-id-source: derived
+components:
+  schemas:
+    CoverageChannel:
+      type: object
+      required:
+      - channel
+      - cadence
+      - stale_after_seconds
+      - stale
+      properties:
+        channel:
+          type: string
+          enum:
+          - gkg
+          - rss
+        cadence:
+          type: string
+        last_ingested_at:
+          type: string
+          format: date-time
+          nullable: true
+        stale_after_seconds:
+          type: integer
+        stale:
+          type: boolean
+    Coverage:
+      type: object
+      required:
+      - generated_at
+      - as_of
+      - research_only
+      - sources
+      properties:
+        generated_at:
+          type: string
+          format: date-time
+          description: When the cached payload was assembled (UTC).
+        as_of:
+          type: string
+          format: date-time
+          description: The instant the counts were taken (UTC). Up to a day older than the response — the passport is recomputed daily, not per request.
+        research_only:
+          type: boolean
+          description: Always `true`. Research information, not investment advice.
+        sources:
+          type: array
+          items:
+            $ref: '#/components/schemas/CoverageSource'
+          description: 'Fixed order: publisher_news, sec_form4, sec_form8k, sec_form6k, earnings_reads, earnings_schedule, economic_calendar. A source with no rows is still present, with null dates and `rows_total: 0`.'
+    CoverageArchiveDays:
+      type: object
+      required:
+      - free
+      - basic
+      - pro
+      properties:
+        free:
+          type: integer
+          description: Days; 0 means unlimited.
+        basic:
+          type: integer
+        pro:
+          type: integer
+    Error:
+      type: object
+      properties:
+        message:
+          type: string
+        error:
+          type: string
+        detail:
+          type: string
+        extra:
+          type: object
+          description: 'Machine-readable context on capped responses: the 429 carries `tier`, `limit_per_minute`, `limit_per_day`, `retry_after_seconds`; the archive 403 carries `reason: archive_horizon`, `tier`, `archive_days`. Both include an `upgrade` object (higher tiers'' caps + `pricing_url`) for callers below Pro. A 400 caused by an unknown query parameter additionally carries `allowed_params` — the complete list this endpoint accepts, read straight off the endpoint''s own schema — plus `docs`, a link to the developer reference. Individual entries in `extra.fields` may carry a did-you-mean hint in their `msg`.'
+    CoverageSource:
+      type: object
+      required:
+      - source
+      - rows_total
+      - cadence
+      - history_note
+      - limits
+      - stale
+      properties:
+        source:
+          type: string
+          enum:
+          - publisher_news
+          - sec_form4
+          - sec_form8k
+          - sec_form6k
+          - earnings_reads
+          - earnings_schedule
+          - economic_calendar
+        first_row_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Earliest row by the source's own clock (article publish time, filing acceptance time, scheduled date at 00:00 UTC). The earliest row we hold, NOT the start of continuous coverage — see `history_note`.
+        last_row_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Latest row by the same clock. For `earnings_schedule` and `economic_calendar` this reaches into the future (scheduled dates).
+        last_ingested_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: 'Arrival clock: when the newest row landed (`created_at`); for `earnings_schedule` the sync''s last touch, for `economic_calendar` the last change to the calendar.'
+        rows_total:
+          type: integer
+          description: 'Rows in the source''s own unit: articles for `publisher_news`, distinct filings (accession numbers) for `sec_form4`, filings for `sec_form8k` / `sec_form6k`, published reads for `earnings_reads`, confirmed dates for `earnings_schedule`, occurrences for `economic_calendar`.'
+        cadence:
+          type: string
+          description: How and how often the source is collected, in plain words.
+        history_note:
+          type: string
+          description: 'Where the history is thin or starts: the caveat you would otherwise discover by probing the feed.'
+        limits:
+          type: array
+          items:
+            type: string
+          description: Known scope limits of the source (what is deliberately not collected).
+        archive_days:
+          nullable: true
+          allOf:
+          - $ref: '#/components/schemas/CoverageArchiveDays'
+          description: How far back a key on each plan can page the news feeds into this source's rows; `null` where the archive gate does not apply (`earnings_reads`, `earnings_schedule`, `economic_calendar` are served by endpoints that page back freely).
+        stale:
+          type: boolean
+          description: '`true` when `last_ingested_at` is older than `stale_after_seconds`, or — for `economic_calendar`, where `stale_after_seconds` is null — when no future occurrence is held. An honest flag, not an alert.'
+        stale_after_seconds:
+          type: integer
+          nullable: true
+          description: 'The horizon `stale` keys on: six poll cycles for the collectors, three days for SEC filings, ten days for earnings reads; `null` for the economic calendar.'
+        channels:
+          type: array
+          nullable: true
+          items:
+            $ref: '#/components/schemas/CoverageChannel'
+          description: Only on `publisher_news` — the two discovery channels.
+  responses:
+    Unauthorized:
+      description: Missing or invalid API key.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    RateLimited:
+      description: 'Rate limit exceeded — either the per-minute burst cap or the per-day
+
+        volume cap. The `Retry-After` header is the earliest second a retry can
+
+        succeed, not a guess (a burst
+
+        block is short, ≤60s; a day-cap block is capped at 3600s — the true reset
+
+        is `X-RateLimit-Reset`). The `X-RateLimit-*` trio shows the daily volume
+
+        budget. The body''s `extra` names your tier, its `limit_per_minute` /
+
+        `limit_per_day`, `retry_after_seconds`, and — below Pro — an `upgrade`
+
+        block with the higher tiers'' caps and the pricing URL. A rejected
+
+        request does not itself consume quota, so retrying after `Retry-After`
+
+        costs you nothing extra.
+
+        '
+      headers:
+        Retry-After:
+          description: Seconds to wait before retrying (burst ≤60s; day cap ≤3600s).
+          schema:
+            type: integer
+        X-RateLimit-Limit:
+          description: The tier's per-day request volume.
+          schema:
+            type: integer
+        X-RateLimit-Remaining:
+          description: Requests left in today's volume budget.
+          schema:
+            type: integer
+        X-RateLimit-Reset:
+          description: Epoch seconds of the next 00:00 UTC reset.
+          schema:
+            type: integer
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+  securitySchemes:
+    apiKey:
+      type: http
+      scheme: bearer
+      bearerFormat: ak_live_*
+      description: 'Token of the form `ak_live_<random>`. Issued from
+
+        `/account/api-keys` on the website. Send as `Authorization: Bearer …`.
+
+        '

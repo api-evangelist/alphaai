@@ -1,8 +1,92 @@
 openapi: 3.2.0
 info:
-  title: alphai REST News API
-  version: 1.24.0
-  description: Public REST API for alphai's relevance-scored, ticker-linked financial news.
+  title: AlphAI REST News API
+  version: 1.52.0
+  description: 'Public REST API for AlphAI''s relevance-scored, ticker-linked financial news. All endpoints accept `Authorization: Bearer ak_live_…` (issued from your
+
+    `/account/api-keys`). Authenticated traffic is metered per account with two
+
+    layers — a per-minute burst cap and a per-day volume cap (Free 20/min +
+
+    100/day, Basic 60/min + 10,000/day, Pro 150/min + 100,000/day); a request
+
+    passes only if both are under budget. The Free tier is for evaluation /
+
+    personal non-commercial use; Basic is licensed for internal commercial use;
+
+    Pro adds redistribution of the enriched feed. Send all API traffic to
+
+    `api.alphai.io`; a key is required on every request. The API is server-side only. It sends no CORS headers, so a cross-origin
+
+    call from a browser page fails at the preflight: the `OPTIONS` request is
+
+    answered with `403` at the edge and never reaches the API. Keep the key on
+
+    your server and expose your own route to the browser; a key embedded in
+
+    page code is readable by every visitor and spends your quota. Every keyed response carries `X-RateLimit-Limit`, `X-RateLimit-Remaining`
+
+    and `X-RateLimit-Reset`; these report the per-day volume layer (Reset =
+
+    epoch seconds of the next 00:00 UTC reset) so you can watch your daily budget
+
+    without provoking a 429. A per-minute burst surfaces only as a 429 with a
+
+    short `Retry-After`. A 429 body also names your tier, its caps and an
+
+    `upgrade` block. A request rejected with 429 does not itself spend quota. The headers reflect origin processing, so a response served from a shared
+
+    cache may omit them. On the MCP server (`mcp.alphai.io`) the same two layers meter **tool calls
+
+    only** — the connect handshake (`initialize`, `tools/list`, notifications,
+
+    keepalives, the SSE stream) is protocol traffic and does not consume your
+
+    quota. It carries a separate, far larger ceiling that exists only to stop a
+
+    client reconnecting in a loop; hitting it returns a 429 whose body reports
+
+    `"window": "transport"`, which means your client is reconnecting too often,
+
+    not that you are out of quota. MCP news tools accept `detail="compact"` for headline triage and polling:
+
+    `alphai_news_search`, `alphai_ticker_news`, `alphai_insider_news`,
+
+    `alphai_trending`, `alphai_actionable_now`, `alphai_macro` and
+
+    `alphai_pair_analysis`. Compact items keep identity, source, publication
+
+    and ingest times, tickers, category, relevance_score, top-level
+
+    actionability and information_novelty, story fields, ownership_form and
+
+    search_match. Summary, analysis, images and SEC detail blocks are omitted;
+
+    fetch `alphai_article(uid)` for those details. `detail="full"` is the
+
+    default and preserves the existing format, including the condensed recent
+
+    lists on pair_analysis. Selection, order, cursors, query interpretation
+
+    and macro releases are unchanged, so detail can change between pages. This parameter belongs to MCP tools only; REST parameters are unchanged. Interactive MCP clients use a separate OAuth approval flow. Check the
+
+    callback host or app scheme and full callback address before approving;
+
+    app names are self-declared, not verified by AlphAI. MCP access includes
+
+    news, market data and the saved watchlist, plus creating, changing and
+
+    disabling the user''s own alerts on Basic or Pro (including after an
+
+    upgrade). The OAuth scope `tools.read` is not a read-only restriction. Registered callbacks can be reviewed in Account → MCP connections. That account management surface requires website login, not an API key. Disconnect blocks all existing MCP OAuth access and refresh tokens for that
+
+    app connection, including its other sessions; work already in progress may
+
+    finish. Other connections and API keys are unaffected. Revoking either token
+
+    type through the separate MCP host''s `/oauth/revoke` has the same effect. Serialize refresh requests and save each replacement token: reuse ends the
+
+    connection.'
   contact:
     name: alphai support
     email: support@alphai.io
@@ -33,30 +117,27 @@ paths:
 
         then pass the
 
-        `next_cursor` from each response to fetch the next (older) page.
-
-        `next_cursor: null` means the end of the feed. Cursors are opaque — do
+        `next_cursor` from each response to fetch the next (older) page. `next_cursor: null` means the end of the feed. Cursors are opaque — do
 
         not construct or parse them; an invalid cursor returns 400. Archive
 
         depth is tiered: paging back past your plan''s horizon (Free 30 days,
 
-        Basic 90, Pro 180) returns 403 with an upgrade hint.
+        Basic 90, Pro 180) returns 403 with an upgrade hint. **Delta polling** (`sort=ingested`): the same feed ordered by the
 
-
-        **Delta polling** (`sort=ingested`): the same feed ordered by the
-
-        moment rows became available, for "what is new since my last poll".
-
-        Articles reach the feed later than their publish time (collection
+        moment rows became available, for "what is new since my last poll". Articles reach the feed later than their publish time (collection
 
         median ~30 min for general news, with a long tail), so a poller that
 
         filters by `time_published` misses most late arrivals; `sort=ingested`
 
-        never misses a row. First call without `cursor` returns the newest
+        follows ingest order. First call without `cursor` returns a bounded
 
-        `page_size` rows and a cursor at the feed head; each later call with
+        sample of up to `page_size` recent visible rows and a cursor at the
+
+        feed head. This initial sample may be partial or empty when the scan
+
+        reaches its work limit; it still starts the live stream. Each later call with
 
         the previous `next_cursor` returns only rows added since. In this mode
 
@@ -66,16 +147,29 @@ paths:
 
         for 60 s, so polling more often than once a minute buys nothing). New
 
-        rows only: an update to an already-delivered article is not re-sent.
-
-        `time_published` is not monotonic within a delta page; sort client-side
+        rows only: an update to an already-delivered article is not re-sent. `time_published` is not monotonic within a delta page; sort client-side
 
         if you need chronological order. A cursor is only valid with the sort
 
-        mode that issued it.
+        mode that issued it. On resumed requests, empty **successful** pages mean the current scan is caught up. A
 
+        nonempty page shorter than `page_size` may still have a continuation;
 
-        Delta mode carries live coverage only: when we add history in bulk
+        keep following its cursor. If a bounded scan cannot produce a page,
+
+        HTTP 409 reports `extra.reason="delta_scan_incomplete"` and
+
+        `extra.next_cursor`. Continue from that cursor with identical filters
+
+        and sort; repeating the original request cannot resolve this work limit. A concurrent change during reading instead returns HTTP 503 with
+
+        `extra.reason="delta_candidates_changed"`: retry the original request,
+
+        without advancing its cursor. Neither error is cached. MCP delta tools
+
+        report the same JSON envelopes as tool errors. The cursor family,
+
+        archive gates and story-collapse behavior remain unchanged. Delta mode carries live coverage only: when we add history in bulk
 
         (backfilling an earlier period), those rows do NOT enter this stream —
 
@@ -85,10 +179,7 @@ paths:
 
         `sort=published`, by date filters and by `/api/news/{uid}/`, so a
 
-        one-off catch-up over the archive is a published-mode query.
-
-
-        **Keeping up.** One call returns at most `page_size` rows, so a poller
+        one-off catch-up over the archive is a published-mode query. **Keeping up.** One call returns at most `page_size` rows, so a poller
 
         holds its position at the head only while `calls per day × page_size`
 
@@ -96,9 +187,7 @@ paths:
 
         falls a little further behind every day, and the symptom misleads:
 
-        `time_published` reads hours or days old while the data is current.
-
-        What went stale is the cursor, not the feed. So drain instead of
+        `time_published` reads hours or days old while the data is current. What went stale is the cursor, not the feed. So drain instead of
 
         polling once per tick: when a page comes back with `results` filled,
 
@@ -114,14 +203,7 @@ paths:
 
         the default `>= 4` floor the feed carries roughly 2,700 rows a day,
 
-        while `min_relevance=7` carries roughly 1,000.
-
-
-        A poller that never catches up eventually meets the archive gate: the
-
-        403 below is keyed on the age of the first row you have not read yet,
-
-        so it fires on a delta poller that never paged back at all.'
+        while `min_relevance=7` carries roughly 1,000.'
       parameters:
       - in: query
         name: cursor
@@ -130,7 +212,7 @@ paths:
           type: string
       - in: query
         name: symbol
-        description: Filter to articles that mention this ticker. US equities use the bare symbol (`NVDA`); cryptocurrencies use the `<SYM>-USD` form (`BTC-USD`), and a bare crypto name resolves to it (`DOGE` matches `DOGE-USD`); foreign listings use the Yahoo suffix (`VOD.L`). A delisted symbol returns its news history. A renamed company's current ticker also matches articles tagged with its former ticker, and any share class of an issuer matches articles tagged with its other listed classes (`GOOGL` includes rows tagged `GOOG`); article tags stay as published.
+        description: Filter to articles that mention this ticker. US equities use the bare symbol (`NVDA`); cryptocurrencies use the `<SYM>-USD` form (`BTC-USD`), and a bare crypto name resolves to it (`DOGE` matches `DOGE-USD`); foreign listings use the Yahoo suffix (`VOD.L`). A delisted symbol returns its news history. A renamed company's current ticker also matches articles tagged with its former ticker, and any share class of an issuer matches articles tagged with its other listed classes (`GOOGL` includes rows tagged `GOOG`); article tags stay as published. `ticker` is accepted as an alias.
         schema:
           type: string
           example: NVDA
@@ -162,7 +244,7 @@ paths:
           default: 4
       - in: query
         name: page_size
-        description: 'Items per page, default `10`. Any value from `1` to `20` is accepted on every tier; `21`-`50` requires a Pro key. A value outside `1`-`50`, or an over-`20` page without a Pro key, returns 400 — the page is never silently clamped. Pagination is otherwise unchanged: pass each response''s `next_cursor` back as `cursor` regardless of page size.'
+        description: 'Items per page, default `10`. Any value from `1` to `20` is accepted on every tier; `21`-`50` requires a Pro key. A value outside `1`-`50`, or an over-`20` page without a Pro key, returns 400 — the page is never silently clamped. Pagination is otherwise unchanged: pass each response''s `next_cursor` back as `cursor` regardless of page size. `limit` is accepted as an alias.'
         schema:
           type: integer
           minimum: 1
@@ -172,11 +254,17 @@ paths:
         name: collapse
         description: '`story` collapses coverage of one event to a single representative row (the story root): syndicated reprints and independently written articles about the same event, matched on headline and lead similarity. Populates the `story_id`, `sources_count` and `sources` fields on each item. Omit for the full feed (every article, story fields `null`). Only `story` is accepted; any other value returns 400.
 
-          Note: row-level filters (`symbol`, `category`, `min_relevance`) apply to the story''s representative root, so a story whose root does not match the filter is omitted entirely.'
+          Note: row-level filters (`symbol`, `category`, `min_relevance`) apply to the story''s representative root, so a story whose root does not match the filter is omitted entirely. The root is the best copy the enricher has seen: a later copy that outscores a weak root (one below 7) takes the root over, so a story''s `story_id` and its place in the feed can move once to that copy; a root at 7 or above is never replaced. An 8-K that carries a press release as its exhibit is a member of that release''s story (same issuer, the release''s headline inside the filing, within 3 hours) when the release itself scores at or above the feed floor, so with `source_type=sec_form8k` a collapsed feed omits such filings — read them uncollapsed. A filing whose release scored below the floor stays its own story.'
         schema:
           type: string
           enum:
           - story
+      - in: query
+        name: collapse_stories
+        description: Boolean alias matching the MCP and Python SDK option. `true` is equivalent to `collapse=story`; `false` leaves articles ungrouped. Send either `collapse` or `collapse_stories`, not both (400).
+        schema:
+          type: boolean
+          default: false
       - in: query
         name: sort
         description: '`published` (default) is the reverse-chronological feed. `ingested` is delta-polling mode: rows in the order they became available, ascending, with `next_cursor` always returned (empty `results` = caught up) — see the endpoint description. All other filters apply unchanged in both modes. Cursors are mode-specific: a cursor is only valid with the sort mode that issued it (a mismatch returns 400).'
@@ -186,6 +274,38 @@ paths:
           - published
           - ingested
           default: published
+      - in: query
+        name: from_date
+        description: 'Inclusive lower bound on `time_published` — when the article was published, not when it entered the feed. ISO-8601; a value without a timezone is read as UTC. A bare date (`2026-06-01`) means that day''s midnight.
+
+          Reaching further back than your plan''s archive horizon returns 403 (see the `403` response) — the window is subject to the same tiered depth as a deep `cursor`, and on the first page just the same. Cannot be combined with `sort=ingested` (400): delta mode returns rows in ingest order from your cursor and never walks back into history.'
+        schema:
+          type: string
+          format: date-time
+        example: '2026-06-01T00:00:00Z'
+      - in: query
+        name: to_date
+        description: Inclusive upper bound on `time_published`, same format as `from_date`. A bare date (`2026-06-01`) covers the WHOLE day (through `23:59:59.999999Z`), so `from_date=2026-06-01&to_date=2026-06-01` returns that day rather than an empty page. `from_date` later than `to_date` returns 400.
+        schema:
+          type: string
+          format: date-time
+        example: '2026-06-30T23:59:59Z'
+      - in: query
+        name: source_type
+        description: 'Keep only rows ingested from these sources: `gdelt` (press coverage), `sec_form4` (insider transactions), `sec_form8k` (8-K current reports), `sec_form6k` (a foreign private issuer''s 6-K earnings release). Same single / CSV / repeated forms as `category`, OR-matched. Unknown values return 400. Composes with every other filter: `source_type=sec_form8k&symbol=NVDA` is one company''s 8-Ks, `source_type=gdelt&min_relevance=8` is the press without any filing.'
+        style: form
+        explode: true
+        schema:
+          type: array
+          items:
+            $ref: '#/components/schemas/NewsSourceType'
+      - in: query
+        name: item
+        description: 8-K item code, e.g. `5.02` (officer departures/appointments), `8.01` (other events), `1.01` (material agreements). Keeps only 8-K filings that carry the item — ANY item of the filing, not just the one that drove its category — and implies `source_type=sec_form8k`; `item` next to any other `source_type` returns 400 (only 8-Ks have item codes). The category filter already covers the two headline items (`2.02` → `earnings`, `2.01` → `mergers_acquisitions`); `item` is for everything else. A filing SEC served no document for has an empty item list and never matches. Every matched row carries the `filing` block.
+        schema:
+          type: string
+          pattern: ^\d\.\d{2}$
+          example: '5.02'
       responses:
         '200':
           description: A page of enriched articles.
@@ -196,22 +316,234 @@ paths:
         '400':
           description: Invalid cursor (opaque; reuse `next_cursor`)
           a cursor replayed into the other `sort` mode: null
+          a date window combined with `sort=ingested` or with `from_date` after `to_date`: null
           unsupported `collapse`/`sort` value: null
-          or a `page_size` outside 1-50 or not permitted on this tier.: null
+          a `page_size` outside 1-50 or not permitted on this tier: null
+          an unknown `source_type`: null
+          a malformed `item`: null
+          or `item` combined with a `source_type` other than `sec_form8k`.: null
         '403':
           $ref: '#/components/responses/ArchiveGated'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '429':
           $ref: '#/components/responses/RateLimited'
+        '409':
+          $ref: '#/components/responses/DeltaScanIncomplete'
+        '503':
+          $ref: '#/components/responses/DeltaCandidatesChanged'
       operationId: getApiNews
+      x-operation-id-source: derived
+  /api/news/search/:
+    get:
+      tags:
+      - News
+      summary: Full-text search over the feed
+      description: 'Search the enriched feed by words. `q` is matched against each
+
+        article''s title, its summary and the entity names the enrichment
+
+        extracted; the page comes back ranked (best match first, newest first
+
+        among equal matches), with a per-item `search_match` and a `query`
+
+        block that says how the words were read. `symbol`, `category`,
+
+        `source_type`, `item`, `min_relevance`, `from_date`, `to_date` and
+
+        `collapse` apply as hard filters on top, exactly as on `/api/news/`:
+
+        `q=director&item=5.02` searches 8-K filings that carry item 5.02,
+
+        `q="going concern"&source_type=gdelt` searches press coverage only.
+
+
+        **Query syntax.** Bare words are all required (`chip tariffs`); a
+
+        quoted phrase must appear in order (`"going concern"`); `-word`
+
+        excludes (`apple -iphone`); `OR` separates alternatives
+
+        (`nvidia OR amd`). Words in a non-Latin script are ignored. Matching
+
+        tolerates one typo from five letters (`prices` reaches `price`) and a
+
+        prefix on the last word; there is no stemming.
+
+
+        **Modes** (`query.mode`). `strict`: every word matched. `broadened`:
+
+        the strict pass found fewer than 5 rows and the query has three or
+
+        more words, so the most frequent words were dropped and the page
+
+        carries rows with at least two of the query''s words —
+
+        `search_match.terms_matched` says how many on each; read these as
+
+        leads, not matches. `no_match`: nothing in the searched window.
+
+        `no_terms`: the query held no searchable words. Absence is not proof
+
+        the event did not happen: the searched window starts at
+
+        `query.window_from`.
+
+
+        **Window and paging.** The searched window is your plan''s archive
+
+        horizon (Free 30 days, Basic 90, Pro 180) unless `from_date` /
+
+        `to_date` narrow it; a window reaching past the horizon returns 403
+
+        like the feed. Results are bounded to the best 200 matches (`matched`
+
+        counts them, capped at 200) and paged with an opaque `cursor` that is
+
+        bound to the query that issued it. Responses are private and never
+
+        shared-cached.
+
+
+        **Failure.** When the search service does not answer in time the
+
+        endpoint returns 503 with `extra.reason = "search_unavailable"`. The
+
+        structured feed and every other endpoint are unaffected: retry the
+
+        search later rather than the whole chain.'
+      parameters:
+      - in: query
+        name: q
+        required: true
+        description: The words to search for, 2 to 200 characters (syntax above). `query` is accepted as an alias.
+        schema:
+          type: string
+          minLength: 2
+          maxLength: 200
+          example: Jane Street
+      - in: query
+        name: cursor
+        description: Opaque cursor from a prior response's `next_cursor`; only valid with the `q` that issued it.
+        schema:
+          type: string
+      - in: query
+        name: symbol
+        description: Hard ticker filter, same forms and expansions as on `/api/news/` (`ticker` is an alias).
+        schema:
+          type: string
+          example: NVDA
+      - in: query
+        name: category
+        description: Hard category filter — single value, CSV or repeated, OR-matched.
+        style: form
+        explode: true
+        schema:
+          type: array
+          items:
+            $ref: '#/components/schemas/NewsCategory'
+      - in: query
+        name: source_type
+        description: 'Keep only rows ingested from these sources, same values and forms as on `/api/news/`: `gdelt` (press coverage), `sec_form4`, `sec_form8k`, `sec_form6k`. Single, CSV or repeated, OR-matched. Unknown values return 400.'
+        style: form
+        explode: true
+        schema:
+          type: array
+          items:
+            type: string
+            enum:
+            - gdelt
+            - sec_form4
+            - sec_form8k
+            - sec_form6k
+      - in: query
+        name: item
+        description: '8-K item code, e.g. `5.02`: only 8-K filings carrying that item (any item of the filing). Implies `source_type=sec_form8k`; next to any other `source_type` it returns 400.'
+        schema:
+          type: string
+          pattern: ^\d\.\d{2}$
+          example: '5.02'
+      - in: query
+        name: min_relevance
+        description: Override the default ≥4 threshold.
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 10
+          default: 4
+      - in: query
+        name: page_size
+        description: Items per page, default `10`; `1`-`20` on every tier, up to `50` on a Pro key (`limit` is an alias).
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 50
+          default: 10
+      - in: query
+        name: collapse
+        description: '`story` collapses coverage of one event to its best-ranked article, with `story_id`, `sources_count` and `sources` on each item.'
+        schema:
+          type: string
+          enum:
+          - story
+      - in: query
+        name: collapse_stories
+        description: 'Boolean alias: `true` is equivalent to `collapse=story`; `false` leaves articles ungrouped. Send either spelling, not both (400).'
+        schema:
+          type: boolean
+          default: false
+      - in: query
+        name: from_date
+        description: Inclusive lower bound on `time_published` (ISO-8601, UTC when naive; a bare date is that day's midnight). Past your archive horizon → 403.
+        schema:
+          type: string
+          format: date-time
+      - in: query
+        name: to_date
+        description: Inclusive upper bound on `time_published`; a bare date covers its whole day.
+        schema:
+          type: string
+          format: date-time
+      responses:
+        '200':
+          description: A page of ranked matches.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NewsSearchPage'
+        '400':
+          description: '`q` missing or outside 2-200 characters, an invalid cursor or one issued for another query, a `page_size` outside 1-50 or not permitted on this tier, `from_date` after `to_date`, an unknown `source_type`, a malformed `item` or one combined with a non-8-K `source_type`, or an unsupported `collapse` value.'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/ArchiveGated'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          description: The search service did not answer in time. The body carries `extra.reason = "search_unavailable"`; the feed endpoints are unaffected.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Search is temporarily unavailable; the structured feed at /api/news/ is not affected.
+                  extra:
+                    type: object
+                    properties:
+                      reason:
+                        type: string
+                        enum:
+                        - search_unavailable
+      operationId: getApiNewsSearch
       x-operation-id-source: derived
   /api/news/trending/:
     get:
       tags:
       - News
       summary: Trending news (last 48h)
-      description: 'Top stories from the trailing 48h: `relevance_score >= 8`, ranked by relevance score decayed by article age, so a fresh story outranks an equally-scored stale one. At most two stories per ticker. Fixed size of 10, no pagination. Coverage of one story, syndicated reprints and independent write-ups of the same event alike, is collapsed to a single representative, and each item carries the `story_id`, `sources_count` and `sources` fields for the story it represents. Most stories are carried by a single outlet, so `sources_count` is usually 1; see its field description.'
+      description: 'Top stories from the trailing 48h: `relevance_score >= 8`, ranked by relevance score decayed by article age, so a fresh story outranks an equally-scored stale one. At most two stories per ticker. Fixed size of 10, no pagination. Coverage of one story, syndicated reprints and independent write-ups of the same event alike, is collapsed to a single representative, and each item carries the `story_id`, `sources_count` and `sources` fields for the story it represents. `story_id` is the story ROOT''s uid — the stable story key shared with `?collapse=story` and the MCP tools — while the item itself is the story''s strongest-ranked member, so `story_id` may differ from the item''s own `original.uid`. Most stories are carried by a single outlet, so `sources_count` is usually 1; see its field description.'
       responses:
         '200':
           description: List of enriched articles.
@@ -244,7 +576,17 @@ paths:
 
         score computed from the event''s total (size, buy vs. sell, 10b5-1 plan
 
-        or not). Same enriched shape, ticker
+        or not). A sale (`transaction_code` `S`) tops out at 6 whatever its
+
+        size, and so does a sale back to the issuer (`D`) that leaves the
+
+        insider with no shares, which is how holdings are cashed out when an
+
+        acquisition closes. Purchases, and a `D` that leaves a holding (the
+
+        company buying back a holder''s block), use the full scale. A sale
+
+        filed without a price stays at 6 too. Same enriched shape, ticker
 
         and `relevance_score >= 4` filtering, and cursor-based pagination as
 
@@ -253,6 +595,13 @@ paths:
         first-class route. For aggregate stats instead of the stream, see
 
         `/api/symbols/{ticker}/insider-summary/`.
+
+
+        The category is fixed to `insider`. This endpoint does not accept
+
+        `category`, `exclude_categories` or story-grouping parameters; use
+
+        `/api/news/` for those filters.
 
 
         To watch for new filings, poll with `sort=ingested` rather than
@@ -276,21 +625,26 @@ paths:
           type: string
       - in: query
         name: symbol
-        description: Filter to insider news that mentions this ticker. Delisted symbols return their history; a renamed company's current ticker also matches rows tagged with its former ticker.
+        description: Filter to insider news that mentions this ticker. Delisted symbols return their history; a renamed company's current ticker also matches rows tagged with its former ticker. `ticker` is accepted as an alias.
         schema:
           type: string
           example: NVDA
       - in: query
         name: min_relevance
-        description: Override the default ≥4 threshold. Insider rows score deterministically from the event's summed dollar value (plus buy/10b5-1 modifiers), so this acts as an "only large trades" dial — e.g. `min_relevance=7` keeps roughly $10M+ events.
+        description: 'Override the default ≥4 threshold. Insider rows score deterministically from the event''s summed dollar value (plus buy/10b5-1 modifiers), and a sale tops out at 6, so this acts as an "only large trades" dial: `min_relevance=6` keeps purchases from roughly $500k and sales from roughly $1M, `min_relevance=7` keeps purchases from roughly $1M and no sales, except a large buyback by the company from a holder who keeps a stake (`transaction_code` `D`). A 10b5-1 plan trade sits one step lower.'
         schema:
           type: integer
           minimum: 1
           maximum: 10
           default: 4
       - in: query
+        name: is_10b5_1
+        description: 'Filter on the same field each item''s `insider` block reports: the event''s Rule 10b5-1 status. Omit for every event; `false` returns discretionary trades only — the "hide pre-scheduled sales" dial, since a 10b5-1 ladder was set up months earlier and carries no timing decision; `true` returns plan events only. Event-level, like the field itself: a filing whose group mixes plan and discretionary tranches counts as a plan event on both. The two values partition the feed, so `true` and `false` pages always add up to the unfiltered one.'
+        schema:
+          type: boolean
+      - in: query
         name: page_size
-        description: Items per page, default `10`. Any value from `1` to `20` is accepted on every tier; `21`-`50` requires a Pro key. A value outside `1`-`50`, or an over-`20` page without a Pro key, returns 400.
+        description: Items per page, default `10`. Any value from `1` to `20` is accepted on every tier; `21`-`50` requires a Pro key. A value outside `1`-`50`, or an over-`20` page without a Pro key, returns 400. `limit` is accepted as an alias.
         schema:
           type: integer
           minimum: 1
@@ -305,16 +659,178 @@ paths:
           - published
           - ingested
           default: published
+      - in: query
+        name: from_date
+        description: 'Inclusive lower bound on `time_published`, identical in format and behaviour to the parameter on `/api/news/` (ISO-8601, naive read as UTC, tier-gated with 403, refused with `sort=ingested`).
+
+          Note which clock it is: `time_published` is when the filing reached the feed, NOT the insider''s `transaction_date` reported in the `insider` block. A Form 4 is filed days after the trade, so a window over trade dates is a different question and this parameter does not answer it.'
+        schema:
+          type: string
+          format: date-time
+        example: '2026-06-01T00:00:00Z'
+      - in: query
+        name: to_date
+        description: Inclusive upper bound on `time_published`. A bare date covers the whole day; same clock caveat as `from_date`.
+        schema:
+          type: string
+          format: date-time
+        example: '2026-06-30T23:59:59Z'
+      - in: query
+        name: format
+        description: 'Response format. `json` (default) is the page described below.
+
+          `csv` streams the same feed as a file: one row per insider event,
+
+          the same filters (`symbol`, `min_relevance`, `is_10b5_1`,
+
+          `from_date`/`to_date`, `sort`, `cursor`), walked page by page on
+
+          the server up to your plan''s **row cap** — Free 500, Basic 2 000,
+
+          Pro 10 000 rows per file — inside your plan''s archive horizon
+
+          (30 / 90 / 180 days). `page_size` has no effect on CSV. One
+
+          request counts once against your rate limit, whatever the file''s
+
+          length.
+
+
+          Where a JSON page past the horizon returns 403, the file stops at the horizon and the
+
+          response headers say so (`X-Alphai-Truncated: archive_horizon`).
+
+          Validation errors (a bad cursor, an inverted window, a window with
+
+          `sort=ingested`) are the same 400 JSON bodies as for `format=json`,
+
+          sent before any row.
+
+
+          Concurrent feed changes or a connection error can interrupt the
+
+          stream after headers are sent. Accept a file only after the stream
+
+          completes and the number of parsed CSV data rows matches
+
+          `X-Alphai-Rows`. Otherwise discard the partial file and retry the
+
+          original request; do not advance to `X-Alphai-Next-Cursor`.
+
+
+          Response: `Content-Type: text/csv; charset=utf-8`,
+
+          `Content-Disposition: attachment; filename="alphai-insider-<date>.csv"`,
+
+          `Cache-Control: private, no-store`, plus the `X-Alphai-*` headers
+
+          listed under the 200 response: `X-Alphai-Rows` (data rows in the
+
+          file), `X-Alphai-Row-Cap` (your plan''s cap), `X-Alphai-Truncated`
+
+          (`row_cap` — more rows exist, continue with the cursor;
+
+          `archive_horizon` — the walk reached your plan''s archive depth;
+
+          `false` — the file holds everything the filters select) and
+
+          `X-Alphai-Next-Cursor` (present when there is more: the same token
+
+          a JSON page would have returned at that position, so you can
+
+          continue in either format).
+
+
+          Columns, in order: `uid`, `time_published`, `tickers`
+
+          (`|`-joined), `title`, `url`, `category`, `relevance_score`,
+
+          `side`, `transaction_code`, `shares`, `avg_price_usd`,
+
+          `total_value_usd`, `is_10b5_1`, `insider_name`, `insider_title`,
+
+          `is_officer`, `is_director`, `is_ten_percent_owner`,
+
+          `transaction_date`, `filed_at`, `late_filing`, `summary` — the
+
+          JSON item''s fields and its `insider` block flattened (event
+
+          columns are empty for a row without a block). RFC 4180 quoting,
+
+          LF line endings, UTF-8, timestamps in ISO 8601 UTC (`Z`),
+
+          booleans `true`/`false`, an empty cell for null, never the article
+
+          body. A free-text cell that begins with `=`, `+`, `-`, `@` or a
+
+          tab is prefixed with an apostrophe so it cannot run as a formula
+
+          when the file is opened in a spreadsheet.
+
+
+          Select the format with this parameter only: an `Accept: text/csv`
+
+          header on its own still returns JSON, and a client that sends
+
+          `Accept: application/json` together with `format=csv` gets 406.
+
+          With `sort=ingested` and no cursor the file holds the newest rows
+
+          (up to the cap) in ingest order and the cursor parks at the head,
+
+          like the JSON prime page; with a cursor it holds everything since
+
+          that position, with rows older than your archive horizon skipped
+
+          and reported as `archive_horizon`.
+
+          '
+        schema:
+          type: string
+          enum:
+          - json
+          - csv
+          default: json
       responses:
         '200':
-          description: A page of enriched insider-transaction articles. Each item additionally carries the structured `insider` event block (side / shares / average price / total value / reporting owner) — populated on this endpoint only.
+          description: 'A page of enriched insider-transaction articles. Each item additionally carries the structured `insider` event block (side / shares / average price / total value / reporting owner) — populated on this endpoint only. With `format=csv`, the same rows as a streamed CSV file: see the `format` parameter for the columns, the per-plan row caps and the `X-Alphai-*` headers.'
+          headers:
+            X-Alphai-Rows:
+              description: '`format=csv` only. Data rows in the file (the header line is not counted).'
+              schema:
+                type: integer
+            X-Alphai-Row-Cap:
+              description: '`format=csv` only. Your plan''s rows-per-file cap (Free 500, Basic 2 000, Pro 10 000).'
+              schema:
+                type: integer
+            X-Alphai-Truncated:
+              description: '`format=csv` only. Why the file ended: `row_cap` (more rows exist; continue with `X-Alphai-Next-Cursor`), `archive_horizon` (the walk reached your plan''s archive depth), or `false` (the file holds everything the filters select).'
+              schema:
+                type: string
+                enum:
+                - row_cap
+                - archive_horizon
+                - 'false'
+            X-Alphai-Next-Cursor:
+              description: '`format=csv` only, present when there is more. The same `next_cursor` a JSON page would have returned at this position — pass it as `cursor` to continue in either format.'
+              schema:
+                type: string
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/NewsPagination'
+            text/csv:
+              schema:
+                type: string
+              example: 'uid,time_published,tickers,title,url,category,relevance_score,side,transaction_code,shares,avg_price_usd,total_value_usd,is_10b5_1,insider_name,insider_title,is_officer,is_director,is_ten_percent_owner,transaction_date,filed_at,late_filing,summary
+
+                3f9a1c2b7d8e4f60,2026-09-19T21:12:04Z,NVDA,"NVIDIA insider HUANG JEN HSUN sold 75,000 shares for $13.1M under a 10b5-1 plan",https://www.sec.gov/Archives/edgar/data/1045810/000104581026000123/xslF345X05/wk-form4.xml,insider,6,sell,S,75000,174.66,13099500,true,HUANG JEN HSUN,President and CEO,true,true,false,2026-09-18,2026-09-19T21:12:04Z,false,"Jen Hsun Huang, President and CEO of NVIDIA, sold 75,000 shares on 2026-09-18 at an average price of $174.66, for $13.1M, under a Rule 10b5-1 trading plan."
+
+                '
         '400':
           description: Invalid cursor (opaque; reuse `next_cursor`)
           a cursor replayed into the other `sort` mode: null
+          a date window combined with `sort=ingested` or with `from_date` after `to_date`: null
           an unsupported `sort` value: null
           or a `page_size` outside 1-50 or not permitted on this tier.: null
         '403':
@@ -323,7 +839,160 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '429':
           $ref: '#/components/responses/RateLimited'
+        '409':
+          $ref: '#/components/responses/DeltaScanIncomplete'
+        '503':
+          $ref: '#/components/responses/DeltaCandidatesChanged'
       operationId: getApiNewsInsider
+      x-operation-id-source: derived
+  /api/news/insider/clusters/:
+    get:
+      tags:
+      - News
+      summary: Insider cluster buys (several insiders of one issuer buying together)
+      description: 'Episodes in which **several different insiders of one issuer bought on
+
+        the open market together**: an issuer''s Form 4 purchase dates are
+
+        chained into one episode while consecutive purchases are at most 10
+
+        days apart (an episode is cut at 30 days), and every purchase inside
+
+        it is examined before a buyer counts.
+
+
+        Counting names is not enough — the loudest look-alikes are an IPO or
+
+        PIPE allocation (caught by its price shape, or by the filing''s own
+
+        footnote saying the shares came from the issuer, an offering or a
+
+        negotiated block), a mutual-bank conversion, ESPP / DRIP /
+
+        director-plan lots, the same transaction reported through two owners
+
+        (a director via the fund and the fund itself), and plan lots sitting
+
+        next to one real purchase. Each buyer therefore carries a `role`:
+
+        `independent` buyers are the cluster; `plan_like` (with `reason` when
+
+        the filing''s words decided it), `unpriced` and `duplicate_of` buyers
+
+        are listed so you can see why a 30-name filing burst is not one. The episode''s `pattern` is `open_market` when at
+
+        least two independent buyers remain and one of them is an officer or
+
+        director, `holders_only` when only 10% holders without a role remain,
+
+        and `plan_or_offering` otherwise. The default hides everything but
+
+        `open_market`; ask for the rest explicitly. The rule was fixed against
+
+        90 episodes checked by hand against the filings (2026-09-22): it shows
+
+        58 of 58 real clusters and hides 29 of 30 look-alikes; a 401(k) plan
+
+        purchase can still pass, since the filing says so only in a footnote.
+
+
+        `days` is measured on `known_at` — the moment the episode''s latest
+
+        filing reached EDGAR — so "what became known this month" is one call.
+
+        A purchase filed more than ~40 days after the trade is not chained
+
+        (2.3% of Form 4 purchases). Coverage starts at `meta.coverage_since`
+
+        (the tranche table begins in August 2025); this is a descriptive
+
+        screen (`research_only`, not point-in-time), with no returns attached.
+
+        Only common-stock purchases outside Rule 10b5-1 plans are considered;
+
+        units, preferred and warrants are ignored.'
+      parameters:
+      - in: query
+        name: days
+        description: Lookback in days over `known_at`, `1`-`90`, default `30`. Deeper than your plan's archive horizon (Free 30, Basic 90) returns 403.
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 90
+          default: 30
+      - in: query
+        name: min_buyers
+        description: 'Minimum headcount, `2`-`10`, default `2`: independent buyers for `open_market` / `holders_only` episodes, everyone who bought (`buyers_total`) for `plan_or_offering` ones, where by construction fewer than two buyers are independent.'
+        schema:
+          type: integer
+          minimum: 2
+          maximum: 10
+          default: 2
+      - in: query
+        name: min_usd
+        description: Drop episodes whose `total_usd` is below this. An episode with an unknown total (`value_partial` with no priced fill) is kept, not dropped — a missing number is not a small one.
+        schema:
+          type: integer
+          minimum: 0
+      - in: query
+        name: pattern
+        description: '`open_market` (default), `plan_or_offering`, `holders_only`, or `all`. Insiders taking a $70M IPO allocation is an event too; it is labeled, not hidden, when you ask for it.'
+        schema:
+          type: string
+          enum:
+          - open_market
+          - plan_or_offering
+          - holders_only
+          - all
+          default: open_market
+      - in: query
+        name: symbol
+        description: One ticker. A renamed company's current ticker also matches episodes tagged with its former ticker, and share-class siblings (GOOGL / GOOG) match each other. A delisted ticker still returns its episodes when named explicitly; the unfiltered list shows active listings only. `ticker` is accepted as an alias.
+        schema:
+          type: string
+          example: NVDA
+      - in: query
+        name: sort
+        description: '`recent` (default) — newest `known_at` first; `buyers` — most independent buyers first, ties by value; `value` — largest `total_usd` first, unknown totals last. Cursors are sort-specific.'
+        schema:
+          type: string
+          enum:
+          - recent
+          - buyers
+          - value
+          default: recent
+      - in: query
+        name: cursor
+        description: Opaque cursor from a prior response's `next_cursor`, with the same `sort`. Omit for the first page.
+        schema:
+          type: string
+      - in: query
+        name: page_size
+        description: Items per page, default `10`; `1`-`20` on every tier, `21`-`50` with a Pro key. `limit` is accepted as an alias.
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 50
+          default: 10
+      responses:
+        '200':
+          description: A page of classified purchase episodes, newest known first by default.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InsiderClustersPage'
+        '400':
+          description: A parameter outside its range or enum
+          an unknown parameter: null
+          a cursor issued under another `sort`: null
+          or a `page_size` above 20 without a Pro key.: null
+        '403':
+          $ref: '#/components/responses/ArchiveGated'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+      operationId: getApiNewsInsiderClusters
       x-operation-id-source: derived
   /api/news/macro/:
     get:
@@ -381,7 +1050,7 @@ paths:
           default: 4
       - in: query
         name: page_size
-        description: Items per page, default `10`. Any value from `1` to `20` is accepted on every tier; `21`-`50` requires a Pro key. A value outside `1`-`50`, or an over-`20` page without a Pro key, returns 400.
+        description: Items per page, default `10`. Any value from `1` to `20` is accepted on every tier; `21`-`50` requires a Pro key. A value outside `1`-`50`, or an over-`20` page without a Pro key, returns 400. `limit` is accepted as an alias.
         schema:
           type: integer
           minimum: 1
@@ -396,6 +1065,20 @@ paths:
           - published
           - ingested
           default: published
+      - in: query
+        name: from_date
+        description: 'Inclusive lower bound on `time_published`, exactly as on `/api/news/`: ISO-8601, a value without a timezone is read as UTC, a bare date (`2026-09-16`) means that day''s midnight. "What did the tape say after the decision" is `from_date=<decision day>` plus `min_relevance=7`. Subject to your plan''s archive horizon (403 on the first page, see the `403` response) and refused with `sort=ingested` (400).'
+        schema:
+          type: string
+          format: date-time
+        example: '2026-09-16T00:00:00Z'
+      - in: query
+        name: to_date
+        description: Inclusive upper bound on `time_published`, same format as `from_date`. A bare date covers the WHOLE day, so `from_date=2026-09-16&to_date=2026-09-16` returns that day. `from_date` later than `to_date` returns 400.
+        schema:
+          type: string
+          format: date-time
+        example: '2026-09-17T23:59:59Z'
       responses:
         '200':
           description: A page of enriched macro articles.
@@ -407,20 +1090,146 @@ paths:
           description: Invalid cursor (opaque; reuse `next_cursor`)
           a cursor replayed into the other `sort` mode: null
           a category outside the macro set: null
-          or a `page_size` outside 1-50 or not permitted on this tier.: null
+          a `page_size` outside 1-50 or not permitted on this tier: null
+          a date window combined with `sort=ingested`: null
+          or `from_date` after `to_date`.: null
         '403':
           $ref: '#/components/responses/ArchiveGated'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '429':
           $ref: '#/components/responses/RateLimited'
+        '409':
+          $ref: '#/components/responses/DeltaScanIncomplete'
+        '503':
+          $ref: '#/components/responses/DeltaCandidatesChanged'
       operationId: getApiNewsMacro
+      x-operation-id-source: derived
+  /api/news/brief/:
+    get:
+      tags:
+      - News
+      summary: A compact brief across multiple tickers
+      description: 'One response with recent news grouped by story, a separate SEC Form
+
+        4/8-K/6-K filings section, and the next confirmed earnings date per
+
+        ticker. Supply your symbols explicitly; this endpoint does not read
+
+        an account''s saved watchlist. The website and MCP tool
+
+        `alphai_watchlist_brief` use the caller''s saved list instead.
+
+
+        `hours` is a publication-time window ending at `generated_at`, both
+
+        ends inclusive. This is a ranked snapshot, not a delta since the last
+
+        call. Bulk backfills are excluded. Within each section, the newest
+
+        500 matching articles at the configured relevance floor (default 4)
+
+        are grouped, then ranked by each group''s highest relevance and novelty,
+
+        then its newest publication time. Fields on a returned event describe
+
+        the representative article. `limit`
+
+        applies independently to news and filings. Either a candidate overflow
+
+        or additional grouped stories sets that section''s `*_truncated` flag.
+
+        A truncated response is a selection, not a complete event inventory;
+
+        narrow `hours` or use the paginated ticker feed for further coverage.
+
+
+        An event shared by several requested tickers appears once, with
+
+        `matched_tickers` naming all matches. If press coverage and a filing
+
+        share a story, the filing represents it once in the filings section.
+
+        Distinct Form 4 transaction legs
+
+        remain separate even when they share a filing URL. Share classes and
+
+        former ticker names are included. Unrecognized symbols are returned
+
+        in `unknown_tickers`; bare crypto names are not guessed (use BTC-USD).
+
+        Dates are confirmed only, on or after today''s America/New_York date,
+
+        excluding reports already matched to a published filing;
+
+        absence means no confirmed date on file, not that no report is due.
+
+        Available on every tier. Responses use `Cache-Control: private, no-store`.'
+      parameters:
+      - in: query
+        name: tickers
+        required: true
+        description: 1–100 distinct symbols, comma-separated or repeated; case-insensitive.
+        style: form
+        explode: false
+        schema:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items:
+            type: string
+            maxLength: 20
+        example:
+        - NVDA
+        - AMD
+        - BTC-USD
+      - in: query
+        name: hours
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 168
+          default: 24
+      - in: query
+        name: limit
+        description: Maximum grouped stories in each section; this brief has no cursor.
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 20
+          default: 20
+      responses:
+        '200':
+          description: Brief with explicit coverage and truncation information.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WatchlistBriefDTO'
+        '400':
+          description: Invalid
+          missing or unknown query parameter.: null
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+      operationId: getApiNewsBrief
       x-operation-id-source: derived
   /api/news/{uid}/:
     get:
       tags:
       - News
       summary: Get a news article by UID
+      description: 'One enriched article. SEC rows carry the same structured block the
+
+        feeds serve: `insider` on a Form 4 row (as on `/api/news/insider/`),
+
+        `filing` on an 8-K row (as on `/api/news/`), so a uid taken from
+
+        `/api/news/insider/clusters/` opens with its trade data. An 8-K or
+
+        6-K earnings filing can also carry `earnings` (see that field), which
+
+        no feed populates.'
       parameters:
       - in: path
         name: uid
@@ -489,6 +1298,757 @@ paths:
       x-operation-id-source: derived
 components:
   schemas:
+    BriefSignalDTO:
+      properties:
+        ticker:
+          title: Ticker
+          type: string
+        sentiment:
+          anyOf:
+          - type: string
+          - type: 'null'
+          default: null
+          title: Sentiment
+      required:
+      - ticker
+      title: BriefSignalDTO
+      type: object
+    RichNewsArticle:
+      type: object
+      required:
+      - original
+      - enrichment
+      properties:
+        original:
+          $ref: '#/components/schemas/OriginalArticle'
+        enrichment:
+          $ref: '#/components/schemas/EnrichedArticle'
+        search_match:
+          allOf:
+          - $ref: '#/components/schemas/SearchMatch'
+          nullable: true
+          description: Present only on `/api/news/search/` rows — how this article matched the query. `null` on every other endpoint.
+        earnings:
+          allOf:
+          - $ref: '#/components/schemas/EarningsReport'
+          nullable: true
+          description: AlphAI's structured read of the company's SEC earnings filing (8-K item 2.02, or a foreign private issuer's 6-K earnings release). Present only on a major ticker's earnings article whose figures cleared a cross-check against the filing text; null on every other article.
+        story_id:
+          type: string
+          nullable: true
+          description: 'The story this article belongs to: a permanent key, the same value for a given story on every surface (`/api/news/`, search, trending, the MCP tools and `/api/stories/`) and across calls. Filled on every row of `/api/news/` and `/api/news/search/` since 1.49.0, and always on `/api/news/trending/`; a lone article is a story of one and names itself. The value is the `uid` of the story''s first root article and does not change when a stronger copy later takes the root over or two stories merge (before 1.49.0 it followed the live root and could move once). Resolve it with `/api/stories/{story_id}/`: `found` is a story summarised from two or more publishers, `not_a_story` means one publisher carried the event (`/api/news/{uid}/` has the article), `merged` names the surviving story. `/api/news/{uid}/` carries it too; null only on `/api/news/{uid}/related/`. The `sources_count` / `sources` pair stays collapse-only.'
+          example: 788e477c66f3849b
+        sources_count:
+          type: integer
+          nullable: true
+          description: Story-collapsed responses only. Number of distinct outlets (source domains) covering this story; the same outlet running it more than once counts once. Most stories are carried by a single outlet, so this is usually 1. Treat a value above 1 as the signal, not the number itself. May exceed the length of `sources`, which is capped at 10. `null` in the default feed.
+          example: 3
+        sources:
+          type: array
+          nullable: true
+          items:
+            type: string
+          description: Story-collapsed responses only. Distinct source domains covering this story, in first-appearance order, capped at 10. `null` in the default feed.
+          example:
+          - reuters.com
+          - apnews.com
+          - bloomberg.com
+        insider:
+          nullable: true
+          allOf:
+          - $ref: '#/components/schemas/InsiderEvent'
+          description: '`/api/news/insider/` and `/api/news/{uid}/` — the structured SEC Form 4 event block, on every row whose source is a Form 4. `null` on every other row, on the other endpoints, and on rows without paired transaction data.'
+        filing:
+          nullable: true
+          allOf:
+          - $ref: '#/components/schemas/EightKFiling'
+          description: '`/api/news/` and `/api/news/{uid}/` — the structured SEC 8-K filing block, present on every row whose source is an 8-K (`original.source` is `SEC EDGAR 8-K`; filter them with `source_type=sec_form8k` or `item=`). `null` on press, Form 4 and 6-K rows, on the other endpoints, and on the rare 8-K row without structured data.'
+    NewsCategory:
+      type: string
+      description: '`market_movers` is for articles whose subject IS a notable price move ("AMD up 5% today"); `sector_analysis` is genuine sector-level analysis; `insider` covers SEC Form 4 insider transactions only. SEC 8-K filings categorize by their primary item: an earnings release (Item 2.02) is `earnings`, a completed acquisition or disposition (Item 2.01) is `mergers_acquisitions`, and the remaining events (material agreements, debt, executive changes, annual-meeting results, and since 2026-09-17 securities offerings, Regulation FD disclosures and other events under Items 7.01/8.01) are `corporate_actions`. A foreign private issuer''s SEC 6-K appears only when it is an earnings release (`source` "SEC EDGAR 6-K") and is always `earnings`.'
+      enum:
+      - earnings
+      - mergers_acquisitions
+      - regulation
+      - macro_economy
+      - sector_analysis
+      - market_movers
+      - technology
+      - commodities
+      - crypto
+      - ipo
+      - geopolitics
+      - insider
+      - corporate_actions
+      - other
+    ImpactAnalysis:
+      type: object
+      properties:
+        summary:
+          type: string
+        sentiment:
+          $ref: '#/components/schemas/Sentiment'
+        price_impact_prediction:
+          type: string
+        confidence:
+          $ref: '#/components/schemas/Confidence'
+        reasoning:
+          type: string
+    Error:
+      type: object
+      properties:
+        message:
+          type: string
+        error:
+          type: string
+        detail:
+          type: string
+        extra:
+          type: object
+          description: 'Machine-readable context on capped responses: the 429 carries `tier`, `limit_per_minute`, `limit_per_day`, `retry_after_seconds`; the archive 403 carries `reason: archive_horizon`, `tier`, `archive_days`. Both include an `upgrade` object (higher tiers'' caps + `pricing_url`) for callers below Pro. A 400 caused by an unknown query parameter additionally carries `allowed_params` — the complete list this endpoint accepts, read straight off the endpoint''s own schema — plus `docs`, a link to the developer reference. Individual entries in `extra.fields` may carry a did-you-mean hint in their `msg`.'
+    NewsSearchQueryInfo:
+      type: object
+      description: How `/api/news/search/` read the query.
+      required:
+      - mode
+      - sort
+      - terms
+      properties:
+        mode:
+          type: string
+          enum:
+          - strict
+          - broadened
+          - no_match
+          - no_terms
+          description: See the endpoint description.
+        sort:
+          type: string
+          enum:
+          - relevance
+          - published
+          description: '`relevance` (ranked) or `published` (newest first) — the latter when every word is too common to rank on.'
+        terms:
+          type: array
+          items:
+            type: string
+          description: The normalized words that were searched.
+        required_terms:
+          type: array
+          items:
+            type: string
+          description: In `broadened` mode, the words at least one of which every row carries, when the search reports them; empty otherwise (the current engine does not — `search_match.terms_matched` on each item is the count to trust).
+        optional_terms:
+          type: array
+          items:
+            type: string
+        window_from:
+          type: string
+          format: date-time
+          nullable: true
+          description: Start of the searched window (your archive horizon, or `from_date` if later).
+        note:
+          type: string
+          description: One sentence for an agent to act on — what selected the rows, and what they are not.
+    AlternativePerspectives:
+      type: object
+      properties:
+        contrarian_view:
+          type: string
+        overlooked_factors:
+          type: string
+    IndirectMarketEffects:
+      type: object
+      properties:
+        sector_implications:
+          type: string
+        regional_market_impact:
+          type: string
+        global_market_relevance:
+          type: string
+    EarningsReport:
+      type: object
+      description: AlphAI's own structured analysis of an earnings release (SEC Form 8-K item 2.02, or Form 6-K for a foreign private issuer — half-year and full-year periods, IFRS and non-USD figures copied as reported). Every figure was cross-checked against the filing text before storage; consensus estimates and price targets are omitted because they are not in the filing. MCP `alphai_article` returns the structured read; connector `fetch` includes its metrics, comparisons, segments, guidance and limitations in the citation-ready `text` when a completed read exists.
+      required:
+      - company
+      - ticker
+      - fiscal_period
+      - headline
+      - verdict
+      - key_metrics
+      - analysis
+      properties:
+        company:
+          type: string
+        ticker:
+          type: string
+        fiscal_period:
+          type: string
+          example: Second Quarter Fiscal 2027
+        period_end:
+          type: string
+          nullable: true
+        headline:
+          type: string
+        verdict:
+          type: string
+          enum:
+          - strong
+          - solid
+          - mixed
+          - weak
+        verdict_reason:
+          type: string
+        key_metrics:
+          type: array
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+              value:
+                type: string
+                example: $96.2 billion
+                description: The figure exactly as the filing printed it — this is the string that was verified against the document, so a table in millions arrives as `$19,345` and a press-release line as `$6.76 billion`. Use the three companions below to compute.
+              basis:
+                type: string
+                enum:
+                - GAAP
+                - non-GAAP
+                - other
+              prior_year:
+                type: string
+                nullable: true
+              prior_quarter:
+                type: string
+                nullable: true
+              yoy_change:
+                type: string
+                nullable: true
+              qoq_change:
+                type: string
+                nullable: true
+              numeric:
+                type: number
+                nullable: true
+                example: 96.2
+                description: '`value` as a number at the face scale it was printed, sign applied (`$(5,396)` → -5396). Null when `value` carries no figure. The amount in base units is `numeric` × the `scale` multiplier (thousands 1e3, millions 1e6, billions 1e9).'
+              unit:
+                type: string
+                nullable: true
+                example: USD
+                description: ISO-style currency code (`USD`, `EUR`, `TWD`, `CNY`, …), `pct` for a percentage, `bp` for basis points, null for a plain count (shares, units, multiples).
+              scale:
+                type: string
+                nullable: true
+                enum:
+                - ones
+                - thousands
+                - millions
+                - billions
+                - trillions
+                description: 'The multiplier `numeric` is expressed in. Filled only when something in the filing says it: the printed value (`$6.76 billion`, `$60,801 (In millions)`), the metric name, the row''s own prior figure, the same amount printed with its unit in the filing''s prose, or the filing''s table header when it names one scale for its tables. Per-share and percentage figures are `ones`; a per-unit metric (revenue per customer, a price per ounce) never takes a table''s scale. Null means the filing did not say — treat `numeric` as unscaled at your own risk rather than assume millions. Added 2026-09-12; the rules were tightened and every stored read recomputed on 2026-10-01.'
+        segments:
+          type: array
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+              revenue:
+                type: string
+                example: $18,002
+                description: The segment's figure exactly as the filing printed it. A segment table names its unit in the header far more often than in the cell, so use the three companions below to compute.
+              yoy_change:
+                type: string
+                nullable: true
+              qoq_change:
+                type: string
+                nullable: true
+              driver:
+                type: string
+              numeric:
+                type: number
+                nullable: true
+                example: 18002
+                description: '`revenue` as a number at the face scale it was printed. Null when the field carries no figure.'
+              unit:
+                type: string
+                nullable: true
+                example: USD
+                description: ISO-style currency code, `pct` for a percentage, null when the cell prints no currency (or holds a volume, such as units delivered).
+              scale:
+                type: string
+                nullable: true
+                enum:
+                - ones
+                - thousands
+                - millions
+                - billions
+                - trillions
+                description: The multiplier `numeric` is expressed in, by the same rules as a `key_metrics` row. A bare segment figure takes the table header's scale only when the segments then fit under the read's own revenue line; otherwise null. Added 2026-10-01 to every stored read.
+        guidance:
+          type: object
+          nullable: true
+          properties:
+            period:
+              type: string
+            revenue:
+              type: string
+              nullable: true
+            gross_margin:
+              type: string
+              nullable: true
+            operating_expenses:
+              type: string
+              nullable: true
+            tax_rate:
+              type: string
+              nullable: true
+            other:
+              type: array
+              items:
+                type: string
+        vs_prior_guidance:
+          type: array
+          description: Reported figure vs the company's own prior outlook, when available.
+          items:
+            type: object
+            properties:
+              metric:
+                type: string
+              prior_guidance:
+                type: string
+              actual:
+                type: string
+              verdict:
+                type: string
+                enum:
+                - above
+                - in line
+                - below
+                - n/a
+        capital_returns:
+          type: array
+          items:
+            type: string
+        balance_sheet_cash_flow:
+          type: array
+          items:
+            type: string
+        drivers:
+          type: array
+          items:
+            type: string
+        concerns:
+          type: array
+          items:
+            type: string
+        what_to_watch:
+          type: array
+          items:
+            type: string
+        quotes:
+          type: array
+          items:
+            type: object
+            properties:
+              speaker:
+                type: string
+              role:
+                type: string
+                nullable: true
+              text:
+                type: string
+        analysis:
+          type: string
+          description: Several paragraphs of grounded analysis.
+        missing_items:
+          type: array
+          items:
+            type: string
+          description: What the filing did NOT state, named rather than guessed.
+        numbers_verified_from_document:
+          type: boolean
+        table_scale:
+          type: string
+          nullable: true
+          enum:
+          - thousands
+          - millions
+          - billions
+          description: 'The unit the filing''s own table headers name (`(In millions, except per share data)`). The prose and list fields (`analysis`, `balance_sheet_cash_flow`, `capital_returns`, `concerns`, …) quote table figures as printed, so in a read with `table_scale: millions` a bare `$36,197` there is $36,197 million; per-share figures are always as printed. Null when the headers name no unit or name two without a clear majority. Added 2026-10-01 to every stored read.'
+    TickerAnalysis:
+      type: object
+      properties:
+        ticker:
+          type: string
+        relevance_context:
+          type: string
+        impact_analysis:
+          $ref: '#/components/schemas/ImpactAnalysis'
+    AITradingInsights:
+      type: object
+      properties:
+        ticker_analysis:
+          type: array
+          items:
+            $ref: '#/components/schemas/TickerAnalysis'
+        news_trading_value:
+          $ref: '#/components/schemas/NewsTradingValue'
+        indirect_market_effects:
+          $ref: '#/components/schemas/IndirectMarketEffects'
+        alternative_perspectives:
+          $ref: '#/components/schemas/AlternativePerspectives'
+    ClusterFiling:
+      type: object
+      required:
+      - accession_number
+      - filed_at
+      - sec_url
+      properties:
+        accession_number:
+          type: string
+          example: 0002035989-26-000078
+        filed_at:
+          type: string
+          format: date-time
+        sec_url:
+          type: string
+          format: uri
+          description: The filing's EDGAR index page.
+    EightKFiling:
+      type: object
+      description: 'Structured SEC 8-K filing: what the filing itself says, next to the AI read of it. One news row fronts one filing.'
+      required:
+      - items
+      - accession_number
+      - filed_at
+      properties:
+        items:
+          type: array
+          items:
+            type: string
+          description: Every item code the filing carries, in the filing's order (`["5.02", "9.01"]`). `?item=` matches any of them. Empty for a filing SEC served no document for (header-only).
+          example:
+          - '5.02'
+          - '9.01'
+        primary_item:
+          type: string
+          nullable: true
+          description: The item that drove the row's `category` (`2.02` → `earnings`, `2.01` → `mergers_acquisitions`, the rest → `corporate_actions`). `null` when the filing lists no items.
+          example: '5.02'
+        accession_number:
+          type: string
+          description: SEC accession number of the filing — the id to cite.
+          example: 0001193125-26-231145
+        filed_at:
+          type: string
+          format: date-time
+          description: When EDGAR accepted the filing (UTC).
+          example: '2026-09-18T20:05:12Z'
+        event_date:
+          type: string
+          format: date
+          nullable: true
+          description: The filing's own "date of report" — the date of the event it reports, which can precede `filed_at` by up to four business days. `null` when the header carries none.
+          example: '2026-09-16'
+        exhibit_url:
+          type: string
+          format: uri
+          nullable: true
+          description: The press-release exhibit (EX-99.x) the summary was built from, on sec.gov. `null` when the filing has no such exhibit (the summary then reads the cover document).
+          example: https://www.sec.gov/Archives/edgar/data/1045810/000104581026000123/ex99-1.htm
+    EnrichedArticle:
+      type: object
+      properties:
+        category:
+          $ref: '#/components/schemas/NewsCategory'
+        tickers:
+          type: array
+          items:
+            type: string
+          description: Validated tickers the article mentions — only symbols present in `/api/symbols/` survive enrichment-time verification against the article text. Mirrors `ai_trading_insights.ticker_analysis[].ticker`.
+          example:
+          - NVDA
+        relevance_score:
+          type: integer
+          minimum: 1
+          maximum: 10
+          description: 'How much trading value the article itself carries (rates the
+
+            article, not the company; deterministic — same article, same
+
+            score):
+
+            1–2 no trading relevance · 3–4 derivative content about
+
+            already-known events · 5–6 macro/sector datapoints, minor-but-real
+
+            company news · 7–8 real company news with a fresh catalyst ·
+
+            9–10 primary, material, newly disclosed.
+
+            SEC Form 4 rows are scored from the transaction itself (size,
+
+            buy vs. sell, 10b5-1 plan or not) rather than by the model; a
+
+            sale tops out at 6.
+
+            '
+        ai_trading_insights:
+          $ref: '#/components/schemas/AITradingInsights'
+        news_context_enhancement:
+          $ref: '#/components/schemas/NewsContextEnhancement'
+    BriefEventDTO:
+      properties:
+        uid:
+          title: Uid
+          type: string
+        story_id:
+          title: Story Id
+          type: string
+        title:
+          title: Title
+          type: string
+        summary:
+          title: Summary
+          type: string
+        url:
+          title: Url
+          type: string
+        article_url:
+          title: Article Url
+          type: string
+        source_domain:
+          title: Source Domain
+          type: string
+        source_type:
+          title: Source Type
+          type: string
+        time_published:
+          format: date-time
+          title: Time Published
+          type: string
+        matched_tickers:
+          items:
+            type: string
+          title: Matched Tickers
+          type: array
+        category:
+          title: Category
+          type: string
+        relevance_score:
+          title: Relevance Score
+          type: integer
+        information_novelty:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          default: null
+          title: Information Novelty
+        actionability:
+          anyOf:
+          - type: string
+          - type: 'null'
+          default: null
+          title: Actionability
+        signals:
+          items:
+            $ref: '#/components/schemas/BriefSignalDTO'
+          title: Signals
+          type: array
+        earnings_available:
+          default: false
+          title: Earnings Available
+          type: boolean
+      required:
+      - uid
+      - story_id
+      - title
+      - summary
+      - url
+      - article_url
+      - source_domain
+      - source_type
+      - time_published
+      - matched_tickers
+      - category
+      - relevance_score
+      title: BriefEventDTO
+      type: object
+    OriginalArticle:
+      type: object
+      description: The article as fetched from the source. `raw_text` is intentionally NOT exposed here.
+      required:
+      - uid
+      - title
+      - url
+      - summary
+      - time_published
+      - source
+      properties:
+        id:
+          type: integer
+        uid:
+          type: string
+          pattern: ^[a-f0-9]{16}$
+        title:
+          type: string
+        url:
+          type: string
+          format: uri
+        time_published:
+          type: string
+          format: date-time
+        authors:
+          type: array
+          items:
+            type: string
+          description: 'Article authors. On SEC Form 4 rows: every reporting owner of the filing, primary first — a joint filing by a holding vehicle and the person behind it lists both.'
+        summary:
+          type: string
+          description: AI-generated summary safe to redistribute.
+        banner_image:
+          type: string
+          format: uri
+          nullable: true
+        source:
+          type: string
+        source_domain:
+          type: string
+        topics:
+          type: array
+          items:
+            $ref: '#/components/schemas/Topic'
+        tickers_sentiment:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        ownership_form:
+          type: string
+          nullable: true
+          enum:
+          - direct
+          - indirect
+          description: SEC Form 4 insider rows only — the holding pool the transaction touched. `null` for non-insider news. A single Form 4 can surface a `direct` and an `indirect` leg of the same plan as two separate articles (same filing URL, same date); they are distinct economic events, so SUM them rather than dedupe by URL/accession.
+        created_at:
+          type: string
+          format: date-time
+          description: When AlphAI received the article — NOT its publish time (that is `time_published`). Use it to judge how fresh a pickup is. Do not build "what's new" polling on this field; that is what `sort=ingested` on `/api/news/` and `/api/news/insider/` is for.
+        updated_at:
+          type: string
+          format: date-time
+          description: Last time the stored article row was touched (including internal maintenance). Informational only.
+    SearchMatch:
+      type: object
+      description: How an article matched a `/api/news/search/` query.
+      properties:
+        score:
+          type: number
+          description: The engine's ranking score for this row. Comparable within one response only, never across queries or engine versions.
+        terms_matched:
+          type: integer
+          nullable: true
+          description: In `broadened` mode, how many of the query's words this row carries (at least two); `null` in `strict` mode, where every word matched.
+        context:
+          type: string
+          nullable: true
+          description: A fragment of the summary around the matched words, each wrapped in `**…**`; `null` when the match lies in the title or the entity names only.
+    WatchlistBriefDTO:
+      properties:
+        generated_at:
+          format: date-time
+          title: Generated At
+          type: string
+        window_start:
+          format: date-time
+          title: Window Start
+          type: string
+        window_end:
+          format: date-time
+          title: Window End
+          type: string
+        hours:
+          title: Hours
+          type: integer
+        tickers:
+          items:
+            type: string
+          title: Tickers
+          type: array
+        unknown_tickers:
+          items:
+            type: string
+          title: Unknown Tickers
+          type: array
+        events:
+          items:
+            $ref: '#/components/schemas/BriefEventDTO'
+          title: Events
+          type: array
+        filings:
+          items:
+            $ref: '#/components/schemas/BriefEventDTO'
+          title: Filings
+          type: array
+        upcoming_earnings:
+          items:
+            $ref: '#/components/schemas/BriefEarningsDateDTO'
+          title: Upcoming Earnings
+          type: array
+        events_truncated:
+          default: false
+          title: Events Truncated
+          type: boolean
+        filings_truncated:
+          default: false
+          title: Filings Truncated
+          type: boolean
+      required:
+      - generated_at
+      - window_start
+      - window_end
+      - hours
+      - tickers
+      - unknown_tickers
+      - events
+      - filings
+      - upcoming_earnings
+      title: WatchlistBriefDTO
+      type: object
+    InsiderClustersMeta:
+      type: object
+      required:
+      - as_of
+      - coverage_since
+      - episode_gap_days
+      - episode_max_days
+      - research_only
+      - point_in_time
+      properties:
+        as_of:
+          type: string
+          format: date-time
+          description: When the underlying computation ran (the list is refreshed every few minutes).
+        coverage_since:
+          type: string
+          format: date
+          nullable: true
+          description: Earliest purchase date on record; nothing before it can appear.
+        episode_gap_days:
+          type: integer
+          example: 10
+        episode_max_days:
+          type: integer
+          example: 30
+        research_only:
+          type: boolean
+          example: true
+        point_in_time:
+          type: boolean
+          example: false
     InsiderEvent:
       type: object
       description: 'Structured SEC Form 4 event: the aggregate of the news row''s whole transaction group (one row fronts a filing''s non-derivative trades of one type and holding form, so a 10b5-1 ladder is ONE event). `shares` and `total_value_usd` are group sums; `avg_price_usd` is the value-weighted average over priced tranches. Money and share fields are decimal STRINGS to preserve precision.'
@@ -533,7 +2093,7 @@ components:
           example: '4683000'
         is_10b5_1:
           type: boolean
-          description: True when any tranche executed under a pre-arranged 10b5-1 plan.
+          description: 'True when any tranche executed under a pre-arranged 10b5-1 plan. Filterable on this endpoint: `?is_10b5_1=false` keeps only discretionary events.'
         insider_name:
           type: string
           example: STEVENS MARK A
@@ -559,108 +2119,126 @@ components:
         late_filing:
           type: boolean
           description: 'The filing missed the SEC''s two-business-day deadline (Rule 16a-3(g)). Computed on Eastern dates, since EDGAR accepts filings until ~22:00 ET, and with one weekday of slack so a trade in a holiday week is not flagged: true when more than three weekday-days separate `transaction_date` from the filing. About 3% of events carry it; the long tail is catch-up filings covering trades from years earlier.'
-    OriginalArticle:
+    Topic:
       type: object
-      description: The article as fetched from the source. `raw_text` is intentionally NOT exposed here.
       required:
-      - uid
-      - title
-      - url
-      - summary
-      - time_published
-      - source
+      - topic
+      - relevance
       properties:
-        id:
-          type: integer
-        uid:
+        topic:
           type: string
-          pattern: ^[a-f0-9]{16}$
-        title:
-          type: string
-        url:
-          type: string
-          format: uri
-        time_published:
-          type: string
-          format: date-time
-        authors:
-          type: array
-          items:
-            type: string
-        summary:
-          type: string
-          description: AI-generated summary safe to redistribute.
-        banner_image:
-          type: string
-          format: uri
-          nullable: true
-        source:
-          type: string
-        source_domain:
-          type: string
-        topics:
-          type: array
-          items:
-            $ref: '#/components/schemas/Topic'
-        tickers_sentiment:
-          type: array
-          items:
-            type: object
-            additionalProperties: true
-        ownership_form:
-          type: string
-          nullable: true
-          enum:
-          - direct
-          - indirect
-          description: SEC Form 4 insider rows only — the holding pool the transaction touched. `null` for non-insider news. A single Form 4 can surface a `direct` and an `indirect` leg of the same plan as two separate articles (same filing URL, same date); they are distinct economic events, so SUM them rather than dedupe by URL/accession.
-        created_at:
-          type: string
-          format: date-time
-          description: When AlphaAI received the article — NOT its publish time (that is `time_published`). Use it to judge how fresh a pickup is. Do not build "what's new" polling on this field; that is what `sort=ingested` on `/api/news/` and `/api/news/insider/` is for.
-        updated_at:
-          type: string
-          format: date-time
-          description: Last time the stored article row was touched (including internal maintenance). Informational only.
-    EnrichedArticle:
+        relevance:
+          type: number
+          format: float
+    NewsSourceType:
+      type: string
+      description: 'Where a row was ingested from, the axis the `source_type` filter on `/api/news/` selects on. `gdelt` is press coverage (every publisher channel: the GDELT stream, RSS feeds, directly parsed publisher pages); `sec_form4` an insider transaction (`category` `insider`); `sec_form8k` an 8-K current report (carries the `filing` block, filterable by `item`); `sec_form6k` a foreign private issuer''s 6-K earnings release. The row''s `original.source` names the outlet or the SEC form in words.'
+      enum:
+      - gdelt
+      - sec_form4
+      - sec_form8k
+      - sec_form6k
+    Confidence:
+      type: string
+      enum:
+      - high
+      - medium
+      - low
+    InsiderCluster:
       type: object
+      description: One issuer's run of Form 4 purchases and its verdict. Money fields are decimal STRINGS. `buyers` counts independent buyers (the cluster); `buyers_total` everyone who bought, including plan, unpriced and duplicate reporters.
+      required:
+      - ticker
+      - name
+      - cik
+      - window_start
+      - window_end
+      - known_at
+      - buyers
+      - buyers_total
+      - officer_director_buyers
+      - ten_percent_owner_buyers
+      - fills
+      - filings
+      - total_usd
+      - value_partial
+      - distinct_dates
+      - distinct_prices
+      - pattern
+      - pattern_reasons
+      - buyers_detail
+      - filings_detail
       properties:
-        category:
-          $ref: '#/components/schemas/NewsCategory'
-        tickers:
+        ticker:
+          type: string
+          example: AMRZ
+        name:
+          type: string
+          example: Amrize Ltd
+        cik:
+          type: integer
+          description: SEC Central Index Key of the issuer.
+        window_start:
+          type: string
+          format: date
+          description: First purchase date of the episode.
+        window_end:
+          type: string
+          format: date
+          description: Last purchase date of the episode.
+        known_at:
+          type: string
+          format: date-time
+          description: When the episode's latest filing reached EDGAR — the clock `days` is measured on.
+        buyers:
+          type: integer
+          description: Independent buyers.
+        buyers_total:
+          type: integer
+          description: Every distinct reporting owner after duplicate merging.
+        officer_director_buyers:
+          type: integer
+          description: Independent buyers who are an officer or director.
+        ten_percent_owner_buyers:
+          type: integer
+          description: Independent buyers flagged as 10% owners.
+        fills:
+          type: integer
+          description: Purchase tranches counted (a transaction reported twice is counted once).
+        filings:
+          type: integer
+          description: Distinct Form 4 filings.
+        total_usd:
+          type: string
+          nullable: true
+          description: Sum of the counted tranches' values (decimal string); `null` when no tranche carries a price.
+        value_partial:
+          type: boolean
+          description: '`true` when at least one counted tranche has no price, so `total_usd` understates the episode.'
+        distinct_dates:
+          type: integer
+        distinct_prices:
+          type: integer
+          description: Distinct prices to the cent across priced tranches.
+        pattern:
+          type: string
+          enum:
+          - open_market
+          - plan_or_offering
+          - holders_only
+        pattern_reasons:
           type: array
           items:
             type: string
-          description: Validated tickers the article mentions — only symbols present in `/api/symbols/` survive enrichment-time verification against the article text. Mirrors `ai_trading_insights.ticker_analysis[].ticker`.
-          example:
-          - NVDA
-        relevance_score:
-          type: integer
-          minimum: 1
-          maximum: 10
-          description: 'How much trading value the article itself carries (rates the
-
-            article, not the company; deterministic — same article, same
-
-            score):
-
-            1–2 no trading relevance · 3–4 derivative content about
-
-            already-known events · 5–6 macro/sector datapoints, minor-but-real
-
-            company news · 7–8 real company news with a fresh catalyst ·
-
-            9–10 primary, material, newly disclosed.
-
-            SEC Form 4 rows are scored from the transaction itself (size,
-
-            buy vs. sell, 10b5-1 plan or not) rather than by the model.
-
-            '
-        ai_trading_insights:
-          $ref: '#/components/schemas/AITradingInsights'
-        news_context_enhancement:
-          $ref: '#/components/schemas/NewsContextEnhancement'
+          description: Machine-readable notes behind the verdict, e.g. `mass_uniform_date_price`, `same_price_across_dates`, `one_price_multi_date`, `plan_like_buyers`, `off_market_buyers` (a buyer whose filing says placement / offering / private), `unpriced_buyers`, `duplicate_filings`, `no_officer_or_director`.
+        buyers_detail:
+          type: array
+          items:
+            $ref: '#/components/schemas/ClusterBuyer'
+        filings_detail:
+          type: array
+          items:
+            $ref: '#/components/schemas/ClusterFiling'
     NewsContextEnhancement:
       type: object
       properties:
@@ -676,134 +2254,151 @@ components:
           type: string
         estimated_read_time_minutes:
           type: integer
-    Confidence:
-      type: string
-      enum:
-      - high
-      - medium
-      - low
     Sentiment:
       type: string
       enum:
       - positive
       - neutral
       - negative
-    TickerAnalysis:
+    KeyEntity:
       type: object
+      properties:
+        name:
+          type: string
+        type:
+          type: string
+          example: company
+        description:
+          type: string
+    BriefEarningsDateDTO:
       properties:
         ticker:
+          title: Ticker
           type: string
-        relevance_context:
+        report_date:
+          format: date
+          title: Report Date
           type: string
-        impact_analysis:
-          $ref: '#/components/schemas/ImpactAnalysis'
-    IndirectMarketEffects:
+      required:
+      - ticker
+      - report_date
+      title: BriefEarningsDateDTO
       type: object
-      properties:
-        sector_implications:
-          type: string
-        regional_market_impact:
-          type: string
-        global_market_relevance:
-          type: string
-    AITradingInsights:
-      type: object
-      properties:
-        ticker_analysis:
-          type: array
-          items:
-            $ref: '#/components/schemas/TickerAnalysis'
-        news_trading_value:
-          $ref: '#/components/schemas/NewsTradingValue'
-        indirect_market_effects:
-          $ref: '#/components/schemas/IndirectMarketEffects'
-        alternative_perspectives:
-          $ref: '#/components/schemas/AlternativePerspectives'
-    AlternativePerspectives:
-      type: object
-      properties:
-        contrarian_view:
-          type: string
-        overlooked_factors:
-          type: string
-    NewsCategory:
-      type: string
-      description: '`market_movers` is for articles whose subject IS a notable price move ("AMD up 5% today"); `sector_analysis` is genuine sector-level analysis; `insider` covers SEC Form 4 insider transactions only. SEC 8-K filings categorize by their primary item: an earnings release (Item 2.02) is `earnings`, a completed acquisition or disposition (Item 2.01) is `mergers_acquisitions`, and the remaining events (material agreements, debt, executive changes, annual-meeting results) are `corporate_actions`.'
-      enum:
-      - earnings
-      - mergers_acquisitions
-      - regulation
-      - macro_economy
-      - sector_analysis
-      - market_movers
-      - technology
-      - commodities
-      - crypto
-      - ipo
-      - geopolitics
-      - insider
-      - corporate_actions
-      - other
-    ImpactAnalysis:
-      type: object
-      properties:
-        summary:
-          type: string
-        sentiment:
-          $ref: '#/components/schemas/Sentiment'
-        price_impact_prediction:
-          type: string
-        confidence:
-          $ref: '#/components/schemas/Confidence'
-        reasoning:
-          type: string
-    RichNewsArticle:
+    ClusterBuyer:
       type: object
       required:
-      - original
-      - enrichment
+      - name
+      - title
+      - is_officer
+      - is_director
+      - is_ten_percent_owner
+      - role
+      - reason
+      - duplicate_of
+      - fills
+      - usd
+      - first_date
+      - last_date
+      - news_uids
       properties:
-        original:
-          $ref: '#/components/schemas/OriginalArticle'
-        enrichment:
-          $ref: '#/components/schemas/EnrichedArticle'
-        story_id:
+        name:
+          type: string
+          example: Jenisch Jan Philipp
+        title:
+          type: string
+          example: Chairman & CEO
+        is_officer:
+          type: boolean
+        is_director:
+          type: boolean
+        is_ten_percent_owner:
+          type: boolean
+        role:
+          type: string
+          enum:
+          - independent
+          - plan_like
+          - unpriced
+          - duplicate_of
+          description: '`independent` counts toward the cluster. `plan_like`: the buyer''s fills all share an exact date-and-price pair with another buyer''s (an allocation, an ESPP/DRIP lot), match another direct holder''s lot at a round price, or the filing itself says the shares were not bought on the open market (then `reason` is set). `unpriced`: no fill carries a price (units, exchanges). `duplicate_of`: the same transaction another reporter already reported; `duplicate_of` names that reporter.'
+        reason:
           type: string
           nullable: true
-          description: Populated whenever the response is story-collapsed — `?collapse=story` on `/api/news/`, and always on `/api/news/trending/`. The `uid` of this story's representative article — equal to this item's own `original.uid`, and resolvable via `/api/news/{uid}/`. `null` in the default (uncollapsed) feed.
-          example: 788e477c66f3849b
-        sources_count:
+          enum:
+          - placement
+          - offering
+          - private
+          - null
+          description: 'Set on a `plan_like` buyer when the Form 4''s own footnotes or remarks decided it: `placement` — bought from the issuer (a PIPE, a subscription or securities purchase agreement, SPAC sponsor units); `offering` — allocated in a public offering or IPO; `private` — a negotiated block from another holder (a stock transfer agreement, a private transaction). Null when the price shape alone decided the role. Read by the collector since 2026-09-26; earlier filings are backfilled for 90 days.'
+        duplicate_of:
+          type: string
+          nullable: true
+        fills:
           type: integer
+        usd:
+          type: string
           nullable: true
-          description: Story-collapsed responses only. Number of distinct outlets (source domains) covering this story; the same outlet running it more than once counts once. Most stories are carried by a single outlet, so this is usually 1. Treat a value above 1 as the signal, not the number itself. May exceed the length of `sources`, which is capped at 10. `null` in the default feed.
-          example: 3
-        sources:
+          description: Sum of this buyer's priced fills (decimal string).
+        first_date:
+          type: string
+          format: date
+        last_date:
+          type: string
+          format: date
+        news_uids:
           type: array
-          nullable: true
           items:
             type: string
-          description: Story-collapsed responses only. Distinct source domains covering this story, in first-appearance order, capped at 10. `null` in the default feed.
-          example:
-          - reuters.com
-          - apnews.com
-          - bloomberg.com
-        insider:
-          nullable: true
-          allOf:
-          - $ref: '#/components/schemas/InsiderEvent'
-          description: '`/api/news/insider/` only — the structured SEC Form 4 event block. `null` on every other endpoint and on rows without paired transaction data.'
-    Error:
+          description: The `uid`s of the insider news rows fronting this buyer's filings — fetch `/api/news/{uid}/` for the event.
+    Actionability:
+      type: string
+      enum:
+      - high
+      - medium
+      - low
+      - negligible
+    NewsSearchPage:
       type: object
+      required:
+      - results
+      - count
+      - matched
+      - query
       properties:
-        message:
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/RichNewsArticle'
+          description: Feed items in rank order, each with `search_match`.
+        next_cursor:
           type: string
-        error:
+          nullable: true
+          description: Pass back as `cursor` for the next page; `null` past the 200-match bound.
+        count:
+          type: integer
+          description: Items on this page.
+        matched:
+          type: integer
+          description: Visible matches in the bounded candidate set (at most 200); never a global total.
+        query:
+          $ref: '#/components/schemas/NewsSearchQueryInfo'
+    InsiderClustersPage:
+      type: object
+      required:
+      - results
+      - next_cursor
+      - meta
+      properties:
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/InsiderCluster'
+        next_cursor:
           type: string
-        detail:
-          type: string
-        extra:
-          type: object
-          description: 'Machine-readable context on capped responses: the 429 carries `tier`, `limit_per_minute`, `limit_per_day`, `retry_after_seconds`; the archive 403 carries `reason: archive_horizon`, `tier`, `archive_days`. Both include an `upgrade` object (higher tiers'' caps + `pricing_url`) for callers below Pro. A 400 caused by an unknown query parameter additionally carries `allowed_params` — the complete list this endpoint accepts, read straight off the endpoint''s own schema — plus `docs`, a link to the developer reference. Individual entries in `extra.fields` may carry a did-you-mean hint in their `msg`.'
+          nullable: true
+          description: Opaque cursor for the next page (pass back with the same `sort`); `null` at the end.
+        meta:
+          $ref: '#/components/schemas/InsiderClustersMeta'
     NewsTradingValue:
       type: object
       properties:
@@ -820,27 +2415,6 @@ components:
           type: string
         estimated_read_time:
           type: string
-    KeyEntity:
-      type: object
-      properties:
-        name:
-          type: string
-        type:
-          type: string
-          example: company
-        description:
-          type: string
-    Topic:
-      type: object
-      required:
-      - topic
-      - relevance
-      properties:
-        topic:
-          type: string
-        relevance:
-          type: number
-          format: float
     NewsPagination:
       type: object
       required:
@@ -855,24 +2429,114 @@ components:
           type: string
           nullable: true
           description: 'Opaque cursor for the next page. Pass it back as `?cursor=` with the same `sort` mode. Default (`sort=published`) feed: the next older page, `null` when the end of the feed has been reached. Delta mode (`sort=ingested`): always non-null — it is your polling position; empty `results` means caught up, keep the cursor and poll again later.'
-    Actionability:
-      type: string
-      enum:
-      - high
-      - medium
-      - low
-      - negligible
+        symbol_note:
+          type: string
+          nullable: true
+          example: '''BTC'' is Grayscale Bitcoin Mini Trust ETF (a stock/ETF ticker). The cryptocurrency with this symbol trades as BTC-USD — request BTC-USD for coin news.'
+          description: Crypto-collider hint, set only when `symbol` named a string a stock/ETF owns while an active cryptocurrency answers to the same base (crypto is addressed as `<SYM>-USD`, so `BTC` is the Grayscale ETF and `BTC-USD` the coin). One sentence naming the coin ticker to request; `null` for every other query. The page itself still serves the equity's feed — the string keeps its equity meaning.
   responses:
+    ArchiveGated:
+      description: 'The request reaches past your plan''s news-archive horizon (Free 30
+
+        days, Basic 90, Pro 180) — either the `cursor` points beyond it, or
+
+        `from_date` does. The body''s `extra` carries `reason: archive_horizon`,
+
+        your `tier`, the plan''s `archive_days`, and (below Pro) an `upgrade`
+
+        block with the higher tiers'' caps and the pricing URL.
+
+
+        The window is checked on the FIRST page, unlike the cursor: a
+
+        `from_date` older than the horizon is refused immediately rather than
+
+        after paging down to it. A window with only `to_date` is refused when
+
+        that bound itself is past the horizon (the window is open-ended into
+
+        the past). Windows and cursors inside the horizon are unaffected, and
+
+        the request is refused rather than trimmed to the horizon, so a given
+
+        URL always returns the same body.
+
+        '
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Unauthorized:
+      description: Missing or invalid API key.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    DeltaCandidatesChanged:
+      description: 'Delta candidates changed between selection and reading. `extra.reason`
+
+        is `delta_candidates_changed`; no continuation cursor is returned.
+
+        Retry the original request with the same cursor and filters.
+
+        '
+      headers:
+        Cache-Control:
+          description: The interrupted scan must not be cached.
+          schema:
+            type: string
+            example: private, no-store
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            message: Delta candidates changed during the scan. Retry with the original cursor and filters.
+            extra:
+              reason: delta_candidates_changed
     NotFound:
       description: No item with that identifier.
       content:
         application/json:
           schema:
             $ref: '#/components/schemas/Error'
+    DeltaScanIncomplete:
+      description: 'A resumed JSON delta scan consumed its work allowance without finding
+
+        visible rows or reaching the head. `extra.reason` is
+
+        `delta_scan_incomplete`. Continue from `extra.next_cursor` with identical
+
+        filters and sort; only invisible candidates were consumed. Do not retry
+
+        the old cursor or treat this error as caught up. Existing SDK iterators
+
+        raise a conflict error; applications must explicitly resume from the
+
+        cursor in its `extra`. CSV follows these continuations internally.
+
+        '
+      headers:
+        Cache-Control:
+          description: The incomplete scan must not be cached.
+          schema:
+            type: string
+            example: private, no-store
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            message: Delta scan reached its work limit. Continue with next_cursor and the same filters and sort.
+            extra:
+              reason: delta_scan_incomplete
+              next_cursor: opaque-continuation-token
     RateLimited:
       description: 'Rate limit exceeded — either the per-minute burst cap or the per-day
 
-        volume cap. The `Retry-After` header tells you how long to wait (a burst
+        volume cap. The `Retry-After` header is the earliest second a retry can
+
+        succeed, not a guess (a burst
 
         block is short, ≤60s; a day-cap block is capped at 3600s — the true reset
 
@@ -882,7 +2546,11 @@ components:
 
         `limit_per_day`, `retry_after_seconds`, and — below Pro — an `upgrade`
 
-        block with the higher tiers'' caps and the pricing URL.
+        block with the higher tiers'' caps and the pricing URL. A rejected
+
+        request does not itself consume quota, so retrying after `Retry-After`
+
+        costs you nothing extra.
 
         '
       headers:
@@ -902,30 +2570,6 @@ components:
           description: Epoch seconds of the next 00:00 UTC reset.
           schema:
             type: integer
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/Error'
-    ArchiveGated:
-      description: 'The requested `cursor` points past your plan''s news-archive horizon
-
-        (Free 30 days, Basic 90, Pro 180). The body''s `extra` carries
-
-        `reason: archive_horizon`, your `tier`, the plan''s `archive_days`,
-
-        and (below Pro) an `upgrade` block with the higher tiers'' caps and
-
-        the pricing URL. First pages and cursors within the horizon are
-
-        unaffected.
-
-        '
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/Error'
-    Unauthorized:
-      description: Missing or invalid API key.
       content:
         application/json:
           schema:

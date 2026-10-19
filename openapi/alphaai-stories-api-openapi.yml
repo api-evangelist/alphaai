@@ -1,0 +1,759 @@
+openapi: 3.2.0
+info:
+  title: AlphAI REST Stories API
+  version: 1.52.0
+  description: 'Public REST API for AlphAI''s relevance-scored, ticker-linked financial news. All endpoints accept `Authorization: Bearer ak_live_…` (issued from your
+
+    `/account/api-keys`). Authenticated traffic is metered per account with two
+
+    layers — a per-minute burst cap and a per-day volume cap (Free 20/min +
+
+    100/day, Basic 60/min + 10,000/day, Pro 150/min + 100,000/day); a request
+
+    passes only if both are under budget. The Free tier is for evaluation /
+
+    personal non-commercial use; Basic is licensed for internal commercial use;
+
+    Pro adds redistribution of the enriched feed. Send all API traffic to
+
+    `api.alphai.io`; a key is required on every request. The API is server-side only. It sends no CORS headers, so a cross-origin
+
+    call from a browser page fails at the preflight: the `OPTIONS` request is
+
+    answered with `403` at the edge and never reaches the API. Keep the key on
+
+    your server and expose your own route to the browser; a key embedded in
+
+    page code is readable by every visitor and spends your quota. Every keyed response carries `X-RateLimit-Limit`, `X-RateLimit-Remaining`
+
+    and `X-RateLimit-Reset`; these report the per-day volume layer (Reset =
+
+    epoch seconds of the next 00:00 UTC reset) so you can watch your daily budget
+
+    without provoking a 429. A per-minute burst surfaces only as a 429 with a
+
+    short `Retry-After`. A 429 body also names your tier, its caps and an
+
+    `upgrade` block. A request rejected with 429 does not itself spend quota. The headers reflect origin processing, so a response served from a shared
+
+    cache may omit them. On the MCP server (`mcp.alphai.io`) the same two layers meter **tool calls
+
+    only** — the connect handshake (`initialize`, `tools/list`, notifications,
+
+    keepalives, the SSE stream) is protocol traffic and does not consume your
+
+    quota. It carries a separate, far larger ceiling that exists only to stop a
+
+    client reconnecting in a loop; hitting it returns a 429 whose body reports
+
+    `"window": "transport"`, which means your client is reconnecting too often,
+
+    not that you are out of quota. MCP news tools accept `detail="compact"` for headline triage and polling:
+
+    `alphai_news_search`, `alphai_ticker_news`, `alphai_insider_news`,
+
+    `alphai_trending`, `alphai_actionable_now`, `alphai_macro` and
+
+    `alphai_pair_analysis`. Compact items keep identity, source, publication
+
+    and ingest times, tickers, category, relevance_score, top-level
+
+    actionability and information_novelty, story fields, ownership_form and
+
+    search_match. Summary, analysis, images and SEC detail blocks are omitted;
+
+    fetch `alphai_article(uid)` for those details. `detail="full"` is the
+
+    default and preserves the existing format, including the condensed recent
+
+    lists on pair_analysis. Selection, order, cursors, query interpretation
+
+    and macro releases are unchanged, so detail can change between pages. This parameter belongs to MCP tools only; REST parameters are unchanged. Interactive MCP clients use a separate OAuth approval flow. Check the
+
+    callback host or app scheme and full callback address before approving;
+
+    app names are self-declared, not verified by AlphAI. MCP access includes
+
+    news, market data and the saved watchlist, plus creating, changing and
+
+    disabling the user''s own alerts on Basic or Pro (including after an
+
+    upgrade). The OAuth scope `tools.read` is not a read-only restriction. Registered callbacks can be reviewed in Account → MCP connections. That account management surface requires website login, not an API key. Disconnect blocks all existing MCP OAuth access and refresh tokens for that
+
+    app connection, including its other sessions; work already in progress may
+
+    finish. Other connections and API keys are unaffected. Revoking either token
+
+    type through the separate MCP host''s `/oauth/revoke` has the same effect. Serialize refresh requests and save each replacement token: reuse ends the
+
+    connection.'
+  contact:
+    name: alphai support
+    email: support@alphai.io
+    url: https://alphai.io/contact
+  license:
+    name: Proprietary
+servers:
+- url: https://api.alphai.io
+  description: Production (API host — key required)
+security:
+- apiKey: []
+tags:
+- name: Stories
+  description: Market events covered by two or more publishers, summarised from their sources.
+paths:
+  /api/stories/top/:
+    get:
+      tags:
+      - Stories
+      summary: Top stories (last 48h)
+      description: 'The strongest stories of the trailing 48 hours, ranked: a story''s
+
+        `importance` plus a coverage bonus of `min(3, log2(publishers))`,
+
+        minus one point per 12 hours since its key facts last changed
+
+        (`updated_at`). One slot per ticker and two per no-ticker macro
+
+        category, so one event cannot fill the list. Only stories with a
+
+        published summary and `importance >= 7` qualify. Fixed size of up to
+
+        50, no pagination; `ranking_version` names the formula so a change
+
+        is visible, `as_of` is when the list was ranked.
+
+
+        Compared with `/api/news/trending/`: trending ranks single articles
+
+        and collapses reprints; this ranks the stories themselves (two or
+
+        more publishers), each with an AlphAI-written summary. A story''s
+
+        `story_id` is the same key an article row carries, so a trending
+
+        item''s `story_id` opens the story here.'
+      responses:
+        '200':
+          description: Ranked stories, strongest first.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TopStories'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: The Stories section is switched off.
+        '429':
+          $ref: '#/components/responses/RateLimited'
+      operationId: getApiStoriesTop
+      x-operation-id-source: derived
+  /api/stories/:
+    get:
+      tags:
+      - Stories
+      summary: Latest stories (cursor-paginated)
+      description: 'Stories newest-first by the time of their latest article
+
+        (`last_material_at`): stories with a published summary and
+
+        `importance >= 7`. Keyset pagination: omit `cursor` for the newest
+
+        page, pass `next_cursor` back for the next (older) one; `null` means
+
+        the end. Cursors are opaque; an invalid one is a 400. Archive depth
+
+        is tiered as on the feeds — paging back past your plan''s horizon
+
+        (Free 30 days, Basic 90, Pro 180) returns 403 `archive_horizon`.
+
+
+        A story keeps moving up this list while articles keep joining it
+
+        (`last_material_at` is the keyset), and its summary is rewritten as
+
+        materials arrive, so re-reading a `story_id` later can return a
+
+        different summary — `updated_at` says when the facts last changed.'
+      parameters:
+      - in: query
+        name: cursor
+        description: Opaque cursor from a prior response's `next_cursor`. Omit for the newest page.
+        schema:
+          type: string
+      - in: query
+        name: page_size
+        description: Stories per page, 1 to 50 on every tier (default 20). `limit` is accepted as an alias.
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 50
+          default: 20
+      responses:
+        '200':
+          description: A page of stories.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StoriesPage'
+        '400':
+          description: Invalid cursor (opaque; reuse `next_cursor`)
+          a `page_size` outside 1-50: null
+          or an unknown parameter (the body's `extra.allowed_params` lists the accepted ones).: null
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/ArchiveGated'
+        '404':
+          description: The Stories section is switched off.
+        '429':
+          $ref: '#/components/responses/RateLimited'
+      operationId: getApiStories
+      x-operation-id-source: derived
+  /api/stories/{story_id}/:
+    get:
+      tags:
+      - Stories
+      summary: Get a story by its id
+      description: 'One story — the summary AlphAI wrote from its articles, the key facts
+
+        each with the publisher it was read from and the `source_uid` of that
+
+        article, the per-ticker read, the open questions — wrapped in a
+
+        lookup `status`, because a `story_id` taken from an article row does
+
+        not always name a current story:
+
+
+        * `found` — `story` is filled.
+
+        * `merged` — this story was folded into another one; `redirect_to`
+
+        is the surviving story''s id. Fetch that one (a web page would 308).
+
+        * `not_a_story` — the id belongs to an article that only one
+
+        publisher carried, so there is no story to summarise; `article`
+
+        names it (`/api/news/{uid}/`). An article''s `story_id` resolves
+
+        here for every row, so this is the normal answer for most of the
+
+        feed: most events are carried by a single outlet.
+
+        * An unknown id is a 404.
+
+
+        `summary_state` tells you how to read the text: `published` (the
+
+        summary covers every article the story had when it was written),
+
+        `stale` (`new_materials` articles joined since; the rewrite is
+
+        queued — the summaries are debounced, so a fast-moving story is
+
+        rewritten minutes, not seconds, after each new article), or
+
+        `preparing` (no summary yet: `title` is the lead article''s headline
+
+        and `summary` its collector summary; `key_facts`, `why_it_matters`,
+
+        `ticker_takes` and `uncertainties` are empty). A story older than
+
+        your plan''s archive horizon (by `last_material_at`) is a 403
+
+        `archive_horizon`, like a deep feed cursor.
+
+
+        The summary is the model''s own text, checked against the articles
+
+        before publishing: every figure in it appears in a source, and no
+
+        passage of more than a dozen words is copied from one. It is
+
+        AI-generated financial information for research, not investment
+
+        advice. Article bodies are never served; `materials` link to the
+
+        publishers.'
+      parameters:
+      - in: path
+        name: story_id
+        required: true
+        description: A story id — the `story_id` of any article row, or an id from `/api/stories/`.
+        schema:
+          type: string
+          pattern: ^[a-f0-9]{16}$
+      responses:
+        '200':
+          description: The lookup — `found`, `merged` or `not_a_story`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StoryLookup'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/ArchiveGated'
+        '404':
+          description: No story or article with that id
+          or the Stories section is switched off.: null
+        '429':
+          $ref: '#/components/responses/RateLimited'
+      operationId: getApiStoriesByStoryId
+      x-operation-id-source: derived
+  /api/stories/{story_id}/materials/:
+    get:
+      tags:
+      - Stories
+      summary: A story's articles (cursor-paginated)
+      description: 'Every article behind a story, oldest first — the materials the
+
+        summary was written from and the ones that joined after it. Same
+
+        visibility as the feed (`relevance_score >= 4`); each row carries its
+
+        `uid` (open it with `/api/news/{uid}/`), publisher, publication time,
+
+        the publisher''s URL and its relevance score. A story''s `key_facts`
+
+        point into this list by `source_uid`. Keyset pagination with
+
+        `cursor` / `next_cursor` as on `/api/stories/`; most stories fit one
+
+        page. Only a current story (`status: found`) has materials: a merged
+
+        or not-a-story id is a 404 here — resolve it through
+
+        `/api/stories/{story_id}/` first.'
+      parameters:
+      - in: path
+        name: story_id
+        required: true
+        schema:
+          type: string
+          pattern: ^[a-f0-9]{16}$
+      - in: query
+        name: cursor
+        description: Opaque cursor from a prior response's `next_cursor`. Omit for the first (oldest) page.
+        schema:
+          type: string
+      - in: query
+        name: page_size
+        description: Articles per page, 1 to 50 on every tier (default 50). `limit` is accepted as an alias.
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 50
+          default: 50
+      responses:
+        '200':
+          description: A page of the story's articles, oldest first.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StoryMaterials'
+        '400':
+          description: Invalid cursor
+          a `page_size` outside 1-50: null
+          or an unknown parameter.: null
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: No current story with that id (merged and single-publisher ids included)
+          or the Stories section is switched off.: null
+        '429':
+          $ref: '#/components/responses/RateLimited'
+      operationId: getApiStoriesByStoryIdMaterials
+      x-operation-id-source: derived
+components:
+  schemas:
+    StoryMaterials:
+      type: object
+      required:
+      - story_id
+      - results
+      - next_cursor
+      properties:
+        story_id:
+          type: string
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/StoryMaterial'
+        next_cursor:
+          type: string
+          nullable: true
+          description: Opaque cursor for the next (newer) page; `null` at the end.
+    StoryTickerTake:
+      type: object
+      required:
+      - ticker
+      - impact
+      - note
+      properties:
+        ticker:
+          type: string
+          example: NVDA
+        impact:
+          type: string
+          enum:
+          - positive
+          - negative
+          - neutral
+          description: The summary's read of the event for this ticker — an editorial call, not a price label.
+        note:
+          type: string
+          description: One line on why.
+    StoryCard:
+      type: object
+      description: 'A story in a list (`/api/stories/top/`, `/api/stories/`): the summary''s title and lead, the story''s importance, breadth and timing.'
+      required:
+      - story_id
+      - title
+      - summary
+      - importance
+      - category
+      - tickers
+      - publishers
+      - materials
+      - first_published_at
+      - last_material_at
+      - updated_at
+      - summary_state
+      properties:
+        story_id:
+          type: string
+          description: Permanent story key — the `uid` of the story's first root article; the same value article rows carry in their `story_id`. Opens `/api/stories/{story_id}/`.
+          example: 788e477c66f3849b
+        title:
+          type: string
+          description: The summary's headline, written by AlphAI from the articles. In `preparing` state, the lead article's own headline.
+        summary:
+          type: string
+          description: 'One paragraph: what happened, with the figures. In `preparing` state, the lead article''s collector summary.'
+        importance:
+          type: integer
+          minimum: 1
+          maximum: 10
+          description: 'How much the event matters, on the feed''s 1-10 relevance scale: the median of each publisher''s best-scored article on the event, rounded down — so one outlet''s 9 does not lift a story every other outlet scored 7. Stories below 7 are not listed and carry no summary.'
+        category:
+          type: string
+          description: The feed category of the story's root article (same 14 values as `enrichment.category`).
+        tickers:
+          type: array
+          items:
+            type: string
+          description: Active tickers the story's articles are tagged with. Macro stories carry an empty list.
+        publishers:
+          type: integer
+          description: Distinct publishers (source domains) covering the story — always 2 or more.
+        materials:
+          type: integer
+          description: Articles in the story that the feed shows (`relevance_score >= 4`), reprints included.
+        first_published_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Publication time of the story's earliest article.
+        last_material_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Publication time of the story's latest article; `/api/stories/` is ordered by it.
+        updated_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: When the story's key facts last changed — a rewrite that only reworded the summary does not move it. The freshness Top stories rank by.
+        summary_state:
+          type: string
+          enum:
+          - published
+          - stale
+          - preparing
+          description: '`published`: the summary covers every article the story had when it was written. `stale`: articles joined since; the rewrite is queued. `preparing`: no summary yet — the texts are the lead article''s own.'
+    TopStories:
+      type: object
+      required:
+      - results
+      - as_of
+      - ranking_version
+      properties:
+        results:
+          type: array
+          maxItems: 50
+          items:
+            $ref: '#/components/schemas/StoryCard'
+        as_of:
+          type: string
+          format: date-time
+          description: When the list was ranked.
+        ranking_version:
+          type: integer
+          description: The ranking formula's version; a change to the formula increments it.
+          example: 1
+    Error:
+      type: object
+      properties:
+        message:
+          type: string
+        error:
+          type: string
+        detail:
+          type: string
+        extra:
+          type: object
+          description: 'Machine-readable context on capped responses: the 429 carries `tier`, `limit_per_minute`, `limit_per_day`, `retry_after_seconds`; the archive 403 carries `reason: archive_horizon`, `tier`, `archive_days`. Both include an `upgrade` object (higher tiers'' caps + `pricing_url`) for callers below Pro. A 400 caused by an unknown query parameter additionally carries `allowed_params` — the complete list this endpoint accepts, read straight off the endpoint''s own schema — plus `docs`, a link to the developer reference. Individual entries in `extra.fields` may carry a did-you-mean hint in their `msg`.'
+    StoryLookup:
+      type: object
+      description: What a story id resolves to. Exactly one of `story`, `redirect_to` and `article` is filled, according to `status`.
+      required:
+      - status
+      properties:
+        status:
+          type: string
+          enum:
+          - found
+          - merged
+          - not_a_story
+          description: '`found`: `story` is filled. `merged`: this story was folded into another one, `redirect_to` is its id. `not_a_story`: the id belongs to an article only one publisher carried, `article` names it. (An unknown id is a 404, not a status.)'
+        story:
+          nullable: true
+          allOf:
+          - $ref: '#/components/schemas/Story'
+        redirect_to:
+          type: string
+          nullable: true
+          description: The surviving story's id, when `status` is `merged`.
+        article:
+          nullable: true
+          allOf:
+          - $ref: '#/components/schemas/StoryArticleRef'
+          description: The single-publisher article the id belongs to, when `status` is `not_a_story`.
+    Story:
+      description: The full story — a `StoryCard` plus the summary's body.
+      allOf:
+      - $ref: '#/components/schemas/StoryCard'
+      - type: object
+        required:
+        - why_it_matters
+        - key_facts
+        - ticker_takes
+        - uncertainties
+        - based_on
+        - materials_at_build
+        - new_materials
+        - revision_generated_at
+        - model
+        - indexable
+        properties:
+          why_it_matters:
+            type: string
+            description: Why the event matters to the market, one short paragraph. Empty in `preparing` state.
+          key_facts:
+            type: array
+            maxItems: 6
+            items:
+              $ref: '#/components/schemas/StoryKeyFact'
+            description: Up to six facts, each attributed to the article it was read from.
+          ticker_takes:
+            type: array
+            items:
+              $ref: '#/components/schemas/StoryTickerTake'
+            description: The read per ticker — direction and a one-line note.
+          uncertainties:
+            type: array
+            items:
+              type: string
+            description: What the articles leave open or disagree on.
+          based_on:
+            type: integer
+            description: Articles whose text the model read when writing the summary. Shown as "based on N of M sources" next to `materials_at_build`.
+          materials_at_build:
+            type: integer
+            description: The story's visible article count when the summary was written.
+          new_materials:
+            type: integer
+            description: Articles that joined after the summary was written (non-zero only in `stale` state).
+          revision_generated_at:
+            type: string
+            format: date-time
+            nullable: true
+            description: When the published summary was written; `null` in `preparing` state.
+          model:
+            type: string
+            description: The model that wrote the published summary; empty in `preparing` state.
+          indexable:
+            type: boolean
+            description: Whether alphai.io lets search engines index this story's page (a published summary, `importance >= 8` and at least five publishers). Informational — it says nothing about the API's own access.
+    StoryMaterial:
+      type: object
+      required:
+      - uid
+      - title
+      - publisher
+      - time_published
+      - url
+      - relevance_score
+      - seo_eligible
+      properties:
+        uid:
+          type: string
+          description: The article's uid — `/api/news/{uid}/` has the enriched row.
+        title:
+          type: string
+        publisher:
+          type: string
+          description: Source domain.
+          example: apnews.com
+        time_published:
+          type: string
+          format: date-time
+        url:
+          type: string
+          description: The publisher's own URL of the article.
+        relevance_score:
+          type: integer
+          minimum: 1
+          maximum: 10
+        seo_eligible:
+          type: boolean
+          description: Whether the article passes AlphAI's quality gate (relevance 7+, tickers, a news category, new information); the story page links such articles to their alphai.io page. Informational — the API serves every row regardless.
+    StoryKeyFact:
+      type: object
+      required:
+      - text
+      - source_uid
+      - publisher
+      properties:
+        text:
+          type: string
+          description: The fact as the summary states it; every figure in it appears in the source article.
+        source_uid:
+          type: string
+          description: The `uid` of the article the fact was read from — a row of `/api/stories/{story_id}/materials/`, openable with `/api/news/{uid}/`. Empty when that article has since been removed.
+        publisher:
+          type: string
+          description: The source domain of that article.
+          example: reuters.com
+    StoriesPage:
+      type: object
+      required:
+      - results
+      - next_cursor
+      properties:
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/StoryCard'
+        next_cursor:
+          type: string
+          nullable: true
+          description: Opaque cursor for the next (older) page; `null` at the end.
+    StoryArticleRef:
+      type: object
+      required:
+      - uid
+      - title
+      - time_published
+      properties:
+        uid:
+          type: string
+        title:
+          type: string
+        time_published:
+          type: string
+          format: date-time
+  responses:
+    ArchiveGated:
+      description: 'The request reaches past your plan''s news-archive horizon (Free 30
+
+        days, Basic 90, Pro 180) — either the `cursor` points beyond it, or
+
+        `from_date` does. The body''s `extra` carries `reason: archive_horizon`,
+
+        your `tier`, the plan''s `archive_days`, and (below Pro) an `upgrade`
+
+        block with the higher tiers'' caps and the pricing URL.
+
+
+        The window is checked on the FIRST page, unlike the cursor: a
+
+        `from_date` older than the horizon is refused immediately rather than
+
+        after paging down to it. A window with only `to_date` is refused when
+
+        that bound itself is past the horizon (the window is open-ended into
+
+        the past). Windows and cursors inside the horizon are unaffected, and
+
+        the request is refused rather than trimmed to the horizon, so a given
+
+        URL always returns the same body.
+
+        '
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Unauthorized:
+      description: Missing or invalid API key.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    RateLimited:
+      description: 'Rate limit exceeded — either the per-minute burst cap or the per-day
+
+        volume cap. The `Retry-After` header is the earliest second a retry can
+
+        succeed, not a guess (a burst
+
+        block is short, ≤60s; a day-cap block is capped at 3600s — the true reset
+
+        is `X-RateLimit-Reset`). The `X-RateLimit-*` trio shows the daily volume
+
+        budget. The body''s `extra` names your tier, its `limit_per_minute` /
+
+        `limit_per_day`, `retry_after_seconds`, and — below Pro — an `upgrade`
+
+        block with the higher tiers'' caps and the pricing URL. A rejected
+
+        request does not itself consume quota, so retrying after `Retry-After`
+
+        costs you nothing extra.
+
+        '
+      headers:
+        Retry-After:
+          description: Seconds to wait before retrying (burst ≤60s; day cap ≤3600s).
+          schema:
+            type: integer
+        X-RateLimit-Limit:
+          description: The tier's per-day request volume.
+          schema:
+            type: integer
+        X-RateLimit-Remaining:
+          description: Requests left in today's volume budget.
+          schema:
+            type: integer
+        X-RateLimit-Reset:
+          description: Epoch seconds of the next 00:00 UTC reset.
+          schema:
+            type: integer
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+  securitySchemes:
+    apiKey:
+      type: http
+      scheme: bearer
+      bearerFormat: ak_live_*
+      description: 'Token of the form `ak_live_<random>`. Issued from
+
+        `/account/api-keys` on the website. Send as `Authorization: Bearer …`.
+
+        '

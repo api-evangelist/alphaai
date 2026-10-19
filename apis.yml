@@ -191,6 +191,36 @@ apis:
     url: data-model/alphaai-data-model.yml
   - type: Webhooks
     url: asyncapi/alphaai-webhooks.yml
+- aid: alphaai:alphaai-coverage-api
+  name: AlphaAI Coverage API
+  description: What each data source holds — from when, how dense, with which caveats.
+  humanURL: https://alphai.io/mcp
+  baseURL: https://mcp.alphai.io/mcp
+  tags:
+  - coverage
+  properties:
+  - type: OpenAPI
+    url: openapi/alphaai-coverage-api-openapi.yml
+- aid: alphaai:alphaai-radar-api
+  name: AlphaAI Radar API
+  description: Descriptive news activity and supporting headlines.
+  humanURL: https://alphai.io/mcp
+  baseURL: https://mcp.alphai.io/mcp
+  tags:
+  - radar
+  properties:
+  - type: OpenAPI
+    url: openapi/alphaai-radar-api-openapi.yml
+- aid: alphaai:alphaai-stories-api
+  name: AlphaAI Stories API
+  description: Market events covered by two or more publishers, summarised from their sources.
+  humanURL: https://alphai.io/mcp
+  baseURL: https://mcp.alphai.io/mcp
+  tags:
+  - stories
+  properties:
+  - type: OpenAPI
+    url: openapi/alphaai-stories-api-openapi.yml
 maintainers:
   - FN: Mikhail Makeev
     email: support@alphai.io

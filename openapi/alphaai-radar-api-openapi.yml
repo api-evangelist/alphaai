@@ -1,0 +1,1051 @@
+openapi: 3.2.0
+info:
+  title: AlphAI REST Radar API
+  version: 1.52.0
+  description: 'Public REST API for AlphAI''s relevance-scored, ticker-linked financial news. All endpoints accept `Authorization: Bearer ak_live_…` (issued from your
+
+    `/account/api-keys`). Authenticated traffic is metered per account with two
+
+    layers — a per-minute burst cap and a per-day volume cap (Free 20/min +
+
+    100/day, Basic 60/min + 10,000/day, Pro 150/min + 100,000/day); a request
+
+    passes only if both are under budget. The Free tier is for evaluation /
+
+    personal non-commercial use; Basic is licensed for internal commercial use;
+
+    Pro adds redistribution of the enriched feed. Send all API traffic to
+
+    `api.alphai.io`; a key is required on every request. The API is server-side only. It sends no CORS headers, so a cross-origin
+
+    call from a browser page fails at the preflight: the `OPTIONS` request is
+
+    answered with `403` at the edge and never reaches the API. Keep the key on
+
+    your server and expose your own route to the browser; a key embedded in
+
+    page code is readable by every visitor and spends your quota. Every keyed response carries `X-RateLimit-Limit`, `X-RateLimit-Remaining`
+
+    and `X-RateLimit-Reset`; these report the per-day volume layer (Reset =
+
+    epoch seconds of the next 00:00 UTC reset) so you can watch your daily budget
+
+    without provoking a 429. A per-minute burst surfaces only as a 429 with a
+
+    short `Retry-After`. A 429 body also names your tier, its caps and an
+
+    `upgrade` block. A request rejected with 429 does not itself spend quota. The headers reflect origin processing, so a response served from a shared
+
+    cache may omit them. On the MCP server (`mcp.alphai.io`) the same two layers meter **tool calls
+
+    only** — the connect handshake (`initialize`, `tools/list`, notifications,
+
+    keepalives, the SSE stream) is protocol traffic and does not consume your
+
+    quota. It carries a separate, far larger ceiling that exists only to stop a
+
+    client reconnecting in a loop; hitting it returns a 429 whose body reports
+
+    `"window": "transport"`, which means your client is reconnecting too often,
+
+    not that you are out of quota. MCP news tools accept `detail="compact"` for headline triage and polling:
+
+    `alphai_news_search`, `alphai_ticker_news`, `alphai_insider_news`,
+
+    `alphai_trending`, `alphai_actionable_now`, `alphai_macro` and
+
+    `alphai_pair_analysis`. Compact items keep identity, source, publication
+
+    and ingest times, tickers, category, relevance_score, top-level
+
+    actionability and information_novelty, story fields, ownership_form and
+
+    search_match. Summary, analysis, images and SEC detail blocks are omitted;
+
+    fetch `alphai_article(uid)` for those details. `detail="full"` is the
+
+    default and preserves the existing format, including the condensed recent
+
+    lists on pair_analysis. Selection, order, cursors, query interpretation
+
+    and macro releases are unchanged, so detail can change between pages. This parameter belongs to MCP tools only; REST parameters are unchanged. Interactive MCP clients use a separate OAuth approval flow. Check the
+
+    callback host or app scheme and full callback address before approving;
+
+    app names are self-declared, not verified by AlphAI. MCP access includes
+
+    news, market data and the saved watchlist, plus creating, changing and
+
+    disabling the user''s own alerts on Basic or Pro (including after an
+
+    upgrade). The OAuth scope `tools.read` is not a read-only restriction. Registered callbacks can be reviewed in Account → MCP connections. That account management surface requires website login, not an API key. Disconnect blocks all existing MCP OAuth access and refresh tokens for that
+
+    app connection, including its other sessions; work already in progress may
+
+    finish. Other connections and API keys are unaffected. Revoking either token
+
+    type through the separate MCP host''s `/oauth/revoke` has the same effect. Serialize refresh requests and save each replacement token: reuse ends the
+
+    connection.'
+  contact:
+    name: alphai support
+    email: support@alphai.io
+    url: https://alphai.io/contact
+  license:
+    name: Proprietary
+servers:
+- url: https://api.alphai.io
+  description: Production (API host — key required)
+security:
+- apiKey: []
+tags:
+- name: Radar
+  description: Descriptive news activity and supporting headlines.
+paths:
+  /api/signals/snapshot/:
+    get:
+      operationId: getRadarSnapshot
+      summary: Rank market or saved-watchlist news activity
+      description: 'Descriptive news-activity ranking. Free delay 3600 seconds; Basic 900 seconds; Pro no added delay. Tier and watchlist owner come from authentication, never query parameters. The public API requires a Bearer API key and uses the normal request quotas. The whole snapshot, including supporting headlines and company names, is selected at or before wall-clock time minus the tier delay. Snapshots refresh every minute and are retained for three hours. Collection and enrichment add processing time. preview_reference_at is null in live mode; a frozen development preview uses that historical clock instead and explicitly reports freshness.mode=historical_preview. as_of is the actual selected cutoff. Only tickers with current-window news appear. snapshot_id identifies immutable content including public evidence metadata. freshness states the effective delay, generation time, source check time and latest enrichment observed. Missing history or a producer more than four minutes behind returns 503, never newer data in place of a delayed snapshot. watchlist_coverage separates known quiet names from names absent from the snapshot; absent does not mean an invalid symbol. Summary is scoped before search/ticker/sentiment/min_z filters and pagination; universe describes the entire stored snapshot. Null metrics stay null. Collection coverage is unverified; these calculations are not point-in-time backtests or confirmed alerts. Historical corrections can affect the model baseline. All responses: private, no-store. event_context reports separate SEC/insider availability, cutoff, generation time, age_seconds at the numeric cutoff (not HTTP time), and lookback windows. results[].event_context contains only that row''s issuer-CIK context: up to 3 recent 8-K/6-K filings over 7 days by filed_at and up to 3 open-market insider clusters over 30 days by known_at (the latest SEC filing time). Counts cover all eligible records; arrays contain the newest records. Each cluster includes up to 5 SEC evidence links, filings_count and evidence_truncated. 6-K coverage is selected ingested earnings releases only. Filings also carry news_uid, news_title, news_published and has_article for AlphAI article links. has_article means enrichment existed before the context cutoff; older snapshots default to false with null title/publication metadata. SEC URLs remain available as sec_url. Share classes with the same CIK share context, without changing news counts, scores, filters, ranking or row eligibility. No USD totals are reported. Context and its evidence follow the same tier delay and cursor; later corrections appear only in new snapshots. Context older than max_age_seconds=300 at the numeric cutoff is unavailable. Missing, disabled, stale or failed context does not fail news readings. Unavailable context has null row context; a row also has null context when it is absent from the context snapshot. Unsupported or unidentified issuers have explicit row status/reason and null counts. Supported issuers with no eligible stored records have zero counts. Available does not certify complete SEC coverage. Unknown or repeated query parameters are rejected.'
+      security:
+      - apiKey: []
+      parameters:
+      - name: window
+        in: query
+        required: false
+        description: Window ending at as_of, not at wall-clock now.
+        schema:
+          default: 24h
+          enum:
+          - 4h
+          - 24h
+          title: Window
+          type: string
+      - name: scope
+        in: query
+        required: false
+        description: market scans all tickers without a tier ticker cap. watchlist requires authentication and reads only the caller's existing saved symbols, matched exactly. An empty list returns no results. Existing watchlist entitlements apply (default Free 10, Basic/Pro unlimited); no separate Radar allowance.
+        schema:
+          default: market
+          enum:
+          - market
+          - watchlist
+          title: Scope
+          type: string
+      - name: market
+        in: query
+        required: false
+        description: Filter within the selected scope; international includes all intl:* markets.
+        schema:
+          default: all
+          enum:
+          - all
+          - us_equity
+          - crypto
+          - international
+          title: Market
+          type: string
+      - name: ticker
+        in: query
+        required: false
+        description: One exact ticker, case-insensitive. No alias expansion. Mutually exclusive with tickers.
+        schema:
+          default: ''
+          maxLength: 32
+          title: Ticker
+          type: string
+      - name: tickers
+        in: query
+        required: false
+        description: Comma-separated exact symbols, case-insensitive. No tier ticker cap; request text is bounded to 16384 characters. Applied within scope, so it never bypasses watchlist ownership.
+        schema:
+          default: ''
+          maxLength: 16384
+          title: Tickers
+          type: string
+      - name: search
+        in: query
+        required: false
+        description: Case-insensitive ticker substring for interactive search. Separate from exact ticker selection.
+        schema:
+          default: ''
+          maxLength: 32
+          title: Search
+          type: string
+      - name: sort
+        in: query
+        required: false
+        description: score, stories (total), model_stories, sentiment or sentiment_change (current minus prior window). Missing values last; ties use total story count then ticker.
+        schema:
+          default: score
+          enum:
+          - score
+          - stories
+          - model_stories
+          - sentiment
+          - sentiment_change
+          title: Sort
+          type: string
+      - name: order
+        in: query
+        required: false
+        description: asc or desc (default). Missing metrics always remain last.
+        schema:
+          default: desc
+          enum:
+          - asc
+          - desc
+          title: Order
+          type: string
+      - name: sentiment
+        in: query
+        required: false
+        description: all, positive (>0.15), negative (<-0.15), mixed (inclusive -0.15 through 0.15). Null metrics match only all.
+        schema:
+          default: all
+          enum:
+          - all
+          - positive
+          - negative
+          - mixed
+          title: Sentiment
+          type: string
+      - name: min_z
+        in: query
+        required: false
+        description: Minimum descriptive activity score, not a confirmed candidate filter.
+        schema:
+          anyOf:
+          - maximum: 8
+            minimum: 0
+            type: number
+          - type: 'null'
+          default: null
+          title: Min Z
+      - name: limit
+        in: query
+        required: false
+        description: Page size only, never a tier ticker cap. Follow next_cursor with the same filters and page size.
+        schema:
+          default: 50
+          maximum: 100
+          minimum: 1
+          title: Limit
+          type: integer
+      - name: offset
+        in: query
+        required: false
+        description: Legacy zero-based pagination without snapshot pinning. Prefer cursor; cannot combine a nonzero offset with cursor.
+        schema:
+          default: 0
+          minimum: 0
+          title: Offset
+          type: integer
+      - name: cursor
+        in: query
+        required: false
+        description: Opaque signed next_cursor or previous_cursor. Pins the complete snapshot, filters, tier and watchlist membership/owner. A changed context, removed snapshot or replaced content returns 409; restart without cursor. Never edit the token.
+        schema:
+          default: ''
+          maxLength: 4096
+          title: Cursor
+          type: string
+      responses:
+        '200':
+          description: Eligible snapshot and effective access rules
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RadarSnapshot'
+        '400':
+          description: Invalid, unknown or repeated parameter
+        '401':
+          description: Invalid authentication or watchlist requested without authentication
+        '404':
+          description: Radar is disabled
+        '409':
+          description: Cursor context changed or pinned snapshot expired; restart without cursor
+        '503':
+          description: No valid eligible snapshot; never substitutes newer data
+        '429':
+          description: Account burst or daily request quota reached; respect Retry-After
+      tags:
+      - Radar
+components:
+  schemas:
+    RadarClusterFiling:
+      properties:
+        accession_number:
+          title: Accession Number
+          type: string
+        filed_at:
+          format: date-time
+          title: Filed At
+          type: string
+        sec_url:
+          title: Sec Url
+          type: string
+      required:
+      - accession_number
+      - filed_at
+      - sec_url
+      title: RadarClusterFiling
+      type: object
+    RadarFilingContext:
+      properties:
+        form:
+          enum:
+          - 8-K
+          - 6-K
+          title: Form
+          type: string
+        accession_number:
+          title: Accession Number
+          type: string
+        filed_at:
+          format: date-time
+          title: Filed At
+          type: string
+        observed_at:
+          format: date-time
+          title: Observed At
+          type: string
+        sec_url:
+          title: Sec Url
+          type: string
+        news_uid:
+          title: News Uid
+          type: string
+        news_title:
+          anyOf:
+          - type: string
+          - type: 'null'
+          default: null
+          description: Article title frozen at the context cutoff.
+          title: News Title
+        news_published:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          default: null
+          description: Article publication time for its AlphAI URL.
+          title: News Published
+        has_article:
+          default: false
+          description: An enriched article existed before the context cutoff. False on older snapshots without metadata.
+          title: Has Article
+          type: boolean
+        items:
+          default: []
+          items:
+            type: string
+          title: Items
+          type: array
+        primary_item:
+          anyOf:
+          - type: string
+          - type: 'null'
+          default: null
+          title: Primary Item
+        event_date:
+          anyOf:
+          - format: date
+            type: string
+          - type: 'null'
+          default: null
+          title: Event Date
+        kind:
+          anyOf:
+          - const: earnings_release
+            type: string
+          - type: 'null'
+          default: null
+          title: Kind
+        period_label:
+          anyOf:
+          - type: string
+          - type: 'null'
+          default: null
+          title: Period Label
+      required:
+      - form
+      - accession_number
+      - filed_at
+      - observed_at
+      - sec_url
+      - news_uid
+      title: RadarFilingContext
+      type: object
+    RadarSignalAccess:
+      properties:
+        tier:
+          enum:
+          - free
+          - basic
+          - pro
+          title: Tier
+          type: string
+        delay_seconds:
+          title: Delay Seconds
+          type: integer
+        scope:
+          enum:
+          - market
+          - watchlist
+          title: Scope
+          type: string
+        watchlist_count:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Watchlist Count
+        watchlist_limit:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Watchlist Limit
+      required:
+      - tier
+      - delay_seconds
+      - scope
+      - watchlist_count
+      - watchlist_limit
+      title: RadarSignalAccess
+      type: object
+    RadarCollection:
+      properties:
+        status:
+          enum:
+          - healthy
+          - unverified
+          title: Status
+          type: string
+        reasons:
+          items:
+            type: string
+          title: Reasons
+          type: array
+        required_channels:
+          items:
+            type: string
+          title: Required Channels
+          type: array
+      required:
+      - status
+      - reasons
+      - required_channels
+      title: RadarCollection
+      type: object
+    RadarSentiment:
+      properties:
+        value:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Value
+        usable_stories:
+          title: Usable Stories
+          type: integer
+        coverage:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Coverage
+        reason:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Reason
+      required:
+      - value
+      - usable_stories
+      - coverage
+      - reason
+      title: RadarSentiment
+      type: object
+    RadarContextSummary:
+      description: Context availability and timing for the selected snapshot, without ticker data.
+      properties:
+        status:
+          default: unavailable
+          enum:
+          - available
+          - unavailable
+          title: Status
+          type: string
+        reason:
+          anyOf:
+          - enum:
+            - disabled
+            - missing
+            - stale
+            - future
+            - invalid
+            - read_failed
+            type: string
+          - type: 'null'
+          default: missing
+          title: Reason
+        as_of:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          default: null
+          title: As Of
+        generated_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          default: null
+          title: Generated At
+        age_seconds:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          default: null
+          title: Age Seconds
+        max_age_seconds:
+          const: 300
+          default: 300
+          title: Max Age Seconds
+          type: integer
+        filings_lookback_days:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          default: null
+          title: Filings Lookback Days
+        cluster_lookback_days:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          default: null
+          title: Cluster Lookback Days
+        identity_scope:
+          const: issuer_cik
+          default: issuer_cik
+          title: Identity Scope
+          type: string
+        point_in_time:
+          const: false
+          default: false
+          title: Point In Time
+          type: boolean
+      title: RadarContextSummary
+      type: object
+    RadarCalculationParams:
+      properties:
+        effective_at:
+          title: Effective At
+          type: integer
+        window_seconds:
+          title: Window Seconds
+          type: integer
+        baseline_seconds:
+          title: Baseline Seconds
+          type: integer
+        half_life_seconds:
+          title: Half Life Seconds
+          type: integer
+        min_relevance:
+          title: Min Relevance
+          type: integer
+        max_story_tickers:
+          title: Max Story Tickers
+          type: integer
+        prior_stories:
+          title: Prior Stories
+          type: number
+        min_baseline_stories:
+          title: Min Baseline Stories
+          type: integer
+        min_baseline_days:
+          title: Min Baseline Days
+          type: integer
+        min_sentiment_stories:
+          title: Min Sentiment Stories
+          type: integer
+        min_sentiment_coverage:
+          title: Min Sentiment Coverage
+          type: number
+        spike_tail:
+          title: Spike Tail
+          type: number
+      required:
+      - effective_at
+      - window_seconds
+      - baseline_seconds
+      - half_life_seconds
+      - min_relevance
+      - max_story_tickers
+      - prior_stories
+      - min_baseline_stories
+      - min_baseline_days
+      - min_sentiment_stories
+      - min_sentiment_coverage
+      - spike_tail
+      title: RadarCalculationParams
+      type: object
+    RadarReading:
+      properties:
+        ticker:
+          title: Ticker
+          type: string
+        sector:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Sector
+        market:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Market
+        market_exposure_baseline:
+          title: Market Exposure Baseline
+          type: integer
+        market_exposure_current:
+          title: Market Exposure Current
+          type: integer
+        collection:
+          $ref: '#/components/schemas/RadarCollection'
+        stories:
+          title: Stories
+          type: integer
+        articles:
+          title: Articles
+          type: integer
+        outlets:
+          title: Outlets
+          type: integer
+        model_stories:
+          title: Model Stories
+          type: integer
+        model_outlets:
+          title: Model Outlets
+          type: integer
+        baseline_stories:
+          title: Baseline Stories
+          type: integer
+        baseline_active_days:
+          title: Baseline Active Days
+          type: integer
+        stories_per_window_unadjusted:
+          title: Stories Per Window Unadjusted
+          type: number
+        stories_expected:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Stories Expected
+        tail_probability:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Tail Probability
+        news_z:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: News Z
+        anomaly_reason:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Anomaly Reason
+        candidate_news_spike:
+          title: Candidate News Spike
+          type: boolean
+        sent:
+          $ref: '#/components/schemas/RadarSentiment'
+        sent_prev:
+          $ref: '#/components/schemas/RadarSentiment'
+        sent_delta:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Sent Delta
+        evidence_uids:
+          items:
+            type: string
+          title: Evidence Uids
+          type: array
+        name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Name
+        evidence:
+          items:
+            $ref: '#/components/schemas/RadarEvidence'
+          title: Evidence
+          type: array
+        event_context:
+          anyOf:
+          - $ref: '#/components/schemas/RadarTickerContext'
+          - type: 'null'
+          default: null
+      required:
+      - ticker
+      - sector
+      - market
+      - market_exposure_baseline
+      - market_exposure_current
+      - collection
+      - stories
+      - articles
+      - outlets
+      - model_stories
+      - model_outlets
+      - baseline_stories
+      - baseline_active_days
+      - stories_per_window_unadjusted
+      - stories_expected
+      - tail_probability
+      - news_z
+      - anomaly_reason
+      - candidate_news_spike
+      - sent
+      - sent_prev
+      - sent_delta
+      - evidence_uids
+      - name
+      - evidence
+      title: RadarReading
+      type: object
+    RadarClusterContext:
+      properties:
+        window_start:
+          format: date
+          title: Window Start
+          type: string
+        window_end:
+          format: date
+          title: Window End
+          type: string
+        known_at:
+          format: date-time
+          title: Known At
+          type: string
+        buyers:
+          title: Buyers
+          type: integer
+        officer_director_buyers:
+          title: Officer Director Buyers
+          type: integer
+        pattern:
+          const: open_market
+          default: open_market
+          title: Pattern
+          type: string
+        filings_count:
+          title: Filings Count
+          type: integer
+        evidence:
+          items:
+            $ref: '#/components/schemas/RadarClusterFiling'
+          title: Evidence
+          type: array
+        evidence_truncated:
+          title: Evidence Truncated
+          type: boolean
+      required:
+      - window_start
+      - window_end
+      - known_at
+      - buyers
+      - officer_director_buyers
+      - filings_count
+      - evidence
+      - evidence_truncated
+      title: RadarClusterContext
+      type: object
+    RadarSnapshot:
+      properties:
+        snapshot_id:
+          title: Snapshot Id
+          type: string
+        methodology_version:
+          title: Methodology Version
+          type: string
+        research_only:
+          default: true
+          title: Research Only
+          type: boolean
+        point_in_time:
+          default: false
+          title: Point In Time
+          type: boolean
+        as_of:
+          format: date-time
+          title: As Of
+          type: string
+        preview_reference_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Preview Reference At
+        freshness:
+          $ref: '#/components/schemas/RadarSnapshotFreshness'
+        access:
+          $ref: '#/components/schemas/RadarSignalAccess'
+        window:
+          enum:
+          - 4h
+          - 24h
+          title: Window
+          type: string
+        parameters:
+          $ref: '#/components/schemas/RadarCalculationParams'
+        limitations:
+          items:
+            type: string
+          title: Limitations
+          type: array
+        input_hashes:
+          additionalProperties:
+            type: string
+          title: Input Hashes
+          type: object
+        universe:
+          title: Universe
+          type: integer
+        summary:
+          $ref: '#/components/schemas/RadarSnapshotSummary'
+        watchlist_coverage:
+          anyOf:
+          - $ref: '#/components/schemas/RadarWatchlistCoverage'
+          - type: 'null'
+        total:
+          title: Total
+          type: integer
+        offset:
+          title: Offset
+          type: integer
+        next_offset:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Next Offset
+        next_cursor:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Next Cursor
+        previous_cursor:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Previous Cursor
+        results:
+          items:
+            $ref: '#/components/schemas/RadarReading'
+          title: Results
+          type: array
+        event_context:
+          $ref: '#/components/schemas/RadarContextSummary'
+      required:
+      - snapshot_id
+      - methodology_version
+      - as_of
+      - preview_reference_at
+      - freshness
+      - access
+      - window
+      - parameters
+      - limitations
+      - input_hashes
+      - universe
+      - summary
+      - watchlist_coverage
+      - total
+      - offset
+      - next_offset
+      - next_cursor
+      - previous_cursor
+      - results
+      title: SnapshotPreviewDTO
+      type: object
+    RadarSnapshotFreshness:
+      properties:
+        mode:
+          default: historical_preview
+          enum:
+          - historical_preview
+          - live
+          title: Mode
+          type: string
+        effective_delay_seconds:
+          title: Effective Delay Seconds
+          type: integer
+        generated_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          default: null
+          title: Generated At
+        source_watermark:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          default: null
+          title: Source Watermark
+        source_checked_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          default: null
+          title: Source Checked At
+        unavailable_reason:
+          anyOf:
+          - type: string
+          - type: 'null'
+          default: Generation time and source watermarks were not recorded in this export.
+          title: Unavailable Reason
+      required:
+      - effective_delay_seconds
+      title: RadarSnapshotFreshness
+      type: object
+    RadarEvidence:
+      properties:
+        uid:
+          title: Uid
+          type: string
+        title:
+          title: Title
+          type: string
+        url:
+          title: Url
+          type: string
+        source_domain:
+          title: Source Domain
+          type: string
+        time_published:
+          format: date-time
+          title: Time Published
+          type: string
+      required:
+      - uid
+      - title
+      - url
+      - source_domain
+      - time_published
+      title: RadarEvidence
+      type: object
+    RadarSnapshotSummary:
+      properties:
+        active_tickers:
+          title: Active Tickers
+          type: integer
+        scored_tickers:
+          title: Scored Tickers
+          type: integer
+        elevated_tickers:
+          title: Elevated Tickers
+          type: integer
+        verified_candidates:
+          title: Verified Candidates
+          type: integer
+        collection_unverified:
+          title: Collection Unverified
+          type: integer
+      required:
+      - active_tickers
+      - scored_tickers
+      - elevated_tickers
+      - verified_candidates
+      - collection_unverified
+      title: RadarSnapshotSummary
+      type: object
+    RadarWatchlistCoverage:
+      properties:
+        no_recent_news:
+          items:
+            type: string
+          title: No Recent News
+          type: array
+        not_in_snapshot:
+          items:
+            type: string
+          title: Not In Snapshot
+          type: array
+      required:
+      - no_recent_news
+      - not_in_snapshot
+      title: RadarWatchlistCoverage
+      type: object
+    RadarTickerContext:
+      properties:
+        ticker:
+          title: Ticker
+          type: string
+        cik:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Cik
+        status:
+          enum:
+          - available
+          - unsupported
+          - unavailable
+          title: Status
+          type: string
+        reason:
+          anyOf:
+          - enum:
+            - non_sec_symbol
+            - unknown_symbol
+            - missing_cik
+            - issuer_changed
+            type: string
+          - type: 'null'
+          default: null
+          title: Reason
+        filings_count:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          default: null
+          title: Filings Count
+        filings:
+          default: []
+          items:
+            $ref: '#/components/schemas/RadarFilingContext'
+          title: Filings
+          type: array
+        cluster_buys_count:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          default: null
+          title: Cluster Buys Count
+        cluster_buys:
+          default: []
+          items:
+            $ref: '#/components/schemas/RadarClusterContext'
+          title: Cluster Buys
+          type: array
+      required:
+      - ticker
+      - cik
+      - status
+      title: RadarTickerContext
+      type: object
+  securitySchemes:
+    apiKey:
+      type: http
+      scheme: bearer
+      bearerFormat: ak_live_*
+      description: 'Token of the form `ak_live_<random>`. Issued from
+
+        `/account/api-keys` on the website. Send as `Authorization: Bearer …`.
+
+        '

@@ -1,0 +1,281 @@
+openapi: 3.2.0
+info:
+  title: alphai REST Calendar API
+  version: 1.24.0
+  description: Public REST API for alphai's relevance-scored, ticker-linked financial news.
+  contact:
+    name: alphai support
+    email: support@alphai.io
+    url: https://alphai.io/contact
+  license:
+    name: Proprietary
+servers:
+- url: https://api.alphai.io
+  description: Production (API host — key required)
+security:
+- apiKey: []
+tags:
+- name: Calendar
+  description: Scheduled US macro releases (FOMC, CPI, jobs, GDP, PCE…).
+paths:
+  /api/calendar/:
+    get:
+      tags:
+      - Calendar
+      summary: Scheduled US macro releases (economic calendar)
+      description: 'The official forward schedule of US macro releases: FOMC decisions
+
+        (with SEP and press-conference markers) and minutes, CPI, PPI, the
+
+        jobs report (nonfarm payrolls), GDP estimates (advance/second/third),
+
+        PCE, advance retail sales, weekly jobless claims and JOLTS — sourced
+
+        from the agencies'' own schedule pages (Fed, BLS, BEA, Census, DOL).
+
+
+        Each occurrence carries a stable `uid` (`US-CPI-2026-07`) that
+
+        survives reschedules: a moved release keeps its identity, updates
+
+        `scheduled_at` and reports `schedule_status`. `phase` says only
+
+        whether the scheduled moment has passed (`upcoming`/`elapsed`) — it
+
+        deliberately does not claim the agency actually published. Pair the
+
+        calendar with `/api/news/macro/` to read what a release meant once
+
+        it''s out.
+
+
+        The window is `[from_date, to_date)` — from inclusive, to exclusive;
+
+        date-only values mean UTC midnight; defaults are today (UTC) → +7
+
+        days; the span is capped at 400 days. No pagination: a full year of
+
+        every series is ~250 rows (hard cap 500), ordered by `scheduled_at`
+
+        ascending. Cancelled and postponed occurrences stay in the response
+
+        with their `schedule_status`.'
+      parameters:
+      - in: query
+        name: from_date
+        description: 'Window start, inclusive. `YYYY-MM-DD` (UTC midnight) or an ISO datetime (naive = UTC). Default: today, UTC midnight.'
+        schema:
+          type: string
+          example: '2026-08-07'
+      - in: query
+        name: to_date
+        description: Window end, exclusive. Same formats. Default `from_date` + 7 days; span capped at 400 days.
+        schema:
+          type: string
+          example: '2026-08-14'
+      - in: query
+        name: event_key
+        description: Narrow to specific series, comma-separated. Unknown keys return 400.
+        schema:
+          type: string
+          example: cpi,nfp,fomc_decision
+      - in: query
+        name: importance
+        description: Narrow by importance tier.
+        schema:
+          type: string
+          enum:
+          - high
+          - medium
+          - low
+      - in: query
+        name: country
+        description: v1 covers US releases only.
+        schema:
+          type: string
+          enum:
+          - US
+          default: US
+      responses:
+        '200':
+          description: Occurrences within the window, `scheduled_at` ascending.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CalendarEvents'
+        '400':
+          description: Unknown parameter or value, a malformed date, `to_date` not after `from_date`, or a window over 400 days.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+      operationId: getApiCalendar
+      x-operation-id-source: derived
+components:
+  schemas:
+    NewsCategory:
+      type: string
+      description: '`market_movers` is for articles whose subject IS a notable price move ("AMD up 5% today"); `sector_analysis` is genuine sector-level analysis; `insider` covers SEC Form 4 insider transactions only. SEC 8-K filings categorize by their primary item: an earnings release (Item 2.02) is `earnings`, a completed acquisition or disposition (Item 2.01) is `mergers_acquisitions`, and the remaining events (material agreements, debt, executive changes, annual-meeting results) are `corporate_actions`.'
+      enum:
+      - earnings
+      - mergers_acquisitions
+      - regulation
+      - macro_economy
+      - sector_analysis
+      - market_movers
+      - technology
+      - commodities
+      - crypto
+      - ipo
+      - geopolitics
+      - insider
+      - corporate_actions
+      - other
+    CalendarEvents:
+      type: object
+      properties:
+        events:
+          type: array
+          items:
+            $ref: '#/components/schemas/CalendarEvent'
+    Error:
+      type: object
+      properties:
+        message:
+          type: string
+        error:
+          type: string
+        detail:
+          type: string
+        extra:
+          type: object
+          description: 'Machine-readable context on capped responses: the 429 carries `tier`, `limit_per_minute`, `limit_per_day`, `retry_after_seconds`; the archive 403 carries `reason: archive_horizon`, `tier`, `archive_days`. Both include an `upgrade` object (higher tiers'' caps + `pricing_url`) for callers below Pro. A 400 caused by an unknown query parameter additionally carries `allowed_params` — the complete list this endpoint accepts, read straight off the endpoint''s own schema — plus `docs`, a link to the developer reference. Individual entries in `extra.fields` may carry a did-you-mean hint in their `msg`.'
+    CalendarEvent:
+      type: object
+      description: One scheduled occurrence of a US macro release. `uid` is a stable, opaque occurrence id — reschedules update the row in place, so the uid is safe to store and link. `phase` is computed against request time and only says whether the scheduled moment passed; check `schedule_status` first (a `cancelled` row's phase is meaningless).
+      properties:
+        uid:
+          type: string
+          example: US-CPI-2026-07
+        event_key:
+          type: string
+          enum:
+          - fomc_decision
+          - fomc_minutes
+          - cpi
+          - ppi
+          - nfp
+          - gdp
+          - pce
+          - retail_sales
+          - jobless_claims
+          - jolts
+        title:
+          type: string
+          example: CPI (Consumer Price Index)
+        reference_period:
+          type: string
+          description: 'What the release covers, machine-readable: a month (`2026-07`), a quarter (`2026-Q2`), or — for weekly claims — the reference week-ending Saturday (`2026-07-25`).'
+          example: 2026-07
+        release_stage:
+          type: string
+          nullable: true
+          description: GDP only — `advance`, `second` or `third`; null elsewhere.
+        scheduled_at:
+          type: string
+          format: date-time
+          description: Official release moment (UTC; 08:30 / 10:00 / 14:00 ET converted).
+        phase:
+          type: string
+          enum:
+          - upcoming
+          - elapsed
+        schedule_status:
+          type: string
+          enum:
+          - scheduled
+          - postponed
+          - cancelled
+        schedule_basis:
+          type: string
+          enum:
+          - official
+          - inferred
+          description: '`official`: the date is printed on the agency''s own schedule page. `inferred`: derived from the documented publication cadence — weekly jobless claims (DOL publishes no forward schedule) and FOMC minutes dates the Fed has not printed yet (three weeks after the meeting). Inferred dates flip to official once the agency lists them.'
+        importance:
+          type: string
+          enum:
+          - high
+          - medium
+          - low
+        category:
+          $ref: '#/components/schemas/NewsCategory'
+        country:
+          type: string
+          example: US
+        source_url:
+          type: string
+          format: uri
+          description: The agency's own schedule page for the series.
+        press_conference_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: FOMC decisions only — the 14:30 ET press conference; null elsewhere.
+        has_sep:
+          type: boolean
+          description: FOMC decisions only — true when the meeting carries a Summary of Economic Projections (the "dot plot").
+  responses:
+    Unauthorized:
+      description: Missing or invalid API key.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    RateLimited:
+      description: 'Rate limit exceeded — either the per-minute burst cap or the per-day
+
+        volume cap. The `Retry-After` header tells you how long to wait (a burst
+
+        block is short, ≤60s; a day-cap block is capped at 3600s — the true reset
+
+        is `X-RateLimit-Reset`). The `X-RateLimit-*` trio shows the daily volume
+
+        budget. The body''s `extra` names your tier, its `limit_per_minute` /
+
+        `limit_per_day`, `retry_after_seconds`, and — below Pro — an `upgrade`
+
+        block with the higher tiers'' caps and the pricing URL.
+
+        '
+      headers:
+        Retry-After:
+          description: Seconds to wait before retrying (burst ≤60s; day cap ≤3600s).
+          schema:
+            type: integer
+        X-RateLimit-Limit:
+          description: The tier's per-day request volume.
+          schema:
+            type: integer
+        X-RateLimit-Remaining:
+          description: Requests left in today's volume budget.
+          schema:
+            type: integer
+        X-RateLimit-Reset:
+          description: Epoch seconds of the next 00:00 UTC reset.
+          schema:
+            type: integer
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+  securitySchemes:
+    apiKey:
+      type: http
+      scheme: bearer
+      bearerFormat: ak_live_*
+      description: 'Token of the form `ak_live_<random>`. Issued from
+
+        `/account/api-keys` on the website. Send as `Authorization: Bearer …`.
+
+        '

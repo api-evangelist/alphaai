@@ -1,11 +1,14 @@
 {
   "provider": "alphaai",
   "sources": [
-    "_original/alphaai-rest-api-openapi.yml"
+    "_original/alphaai-openapi.yml"
   ],
   "outputs": [
     "alphaai-calendar-api-openapi.yml",
+    "alphaai-coverage-api-openapi.yml",
     "alphaai-news-api-openapi.yml",
+    "alphaai-radar-api-openapi.yml",
+    "alphaai-stories-api-openapi.yml",
     "alphaai-symbols-api-openapi.yml"
   ],
   "archived": [],
@@ -13,12 +16,8 @@
   "warnings": [],
   "notes": [
     "sourced from openapi/_original/ (1 archived document(s)); previously refined output at the top level was skipped rather than re-split",
-    "alphaai-rest-api-openapi.yml: upgraded openapi 3.1.0 -> OpenAPI 3.2.0",
-    "apis.yml register: already-registered"
+    "alphaai-openapi.yml: upgraded openapi 3.1.0 -> OpenAPI 3.2.0",
+    "apis.yml register: written (+3 apis, 8 total)"
   ],
-  "skipped": [
-    "alphaai-calendar-api-openapi.yml: previously refined output, superseded by openapi/_original/",
-    "alphaai-news-api-openapi.yml: previously refined output, superseded by openapi/_original/",
-    "alphaai-symbols-api-openapi.yml: previously refined output, superseded by openapi/_original/"
-  ]
+  "skipped": []
 }
