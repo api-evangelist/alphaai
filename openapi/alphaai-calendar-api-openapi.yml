@@ -369,3 +369,9 @@ components:
         `/account/api-keys` on the website. Send as `Authorization: Bearer …`.
 
         '
+x-provenance:
+  method: harvested
+  publisher: AlphaAI
+  source: https://api.alphai.io/api/schema/
+  note: split by refine-openapis from the provider's own published document, verified by fetch (openapi/_original/*.fetch.json);
+    stamped by stamp-openapi-provenance.py (roadmap#793)
