@@ -197,6 +197,8 @@ apis:
   humanURL: https://alphai.io/mcp
   baseURL: https://mcp.alphai.io/mcp
   tags:
+  - Coverage
+  tags_raw:
   - coverage
   properties:
   - type: OpenAPI
@@ -207,6 +209,8 @@ apis:
   humanURL: https://alphai.io/mcp
   baseURL: https://mcp.alphai.io/mcp
   tags:
+  - Radar
+  tags_raw:
   - radar
   properties:
   - type: OpenAPI
@@ -217,6 +221,8 @@ apis:
   humanURL: https://alphai.io/mcp
   baseURL: https://mcp.alphai.io/mcp
   tags:
+  - Stories
+  tags_raw:
   - stories
   properties:
   - type: OpenAPI
